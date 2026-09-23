@@ -1,0 +1,25 @@
+{
+  "name": "3deyes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Instalación artística: stereo viewing (parallel / cross-eye / anaglyph) con Three.js, física, shaders y control externo (ESP32, Ableton Live).",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "osc-bridge": "node tools/osc-bridge.js"
+  },
+  "dependencies": {
+    "cannon-es": "^0.20.0",
+    "lil-gui": "^0.20.0",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  },
+  "optionalDependencies": {
+    "osc": "^2.4.5",
+    "ws": "^8.18.0"
+  }
+}
