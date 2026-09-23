@@ -21,6 +21,9 @@ export class AudioInput {
     this.beatAvg = 0;
     this.beatCooldown = 0;
     this.gain = 1;
+    this.beat = false;     // true solo en el frame en que se detecta un golpe
+    this.active = false;
+    this.element = null;
     params.define('audio.gain', { min: 0, max: 8, default: 2, step: 0.01, label: 'ganancia' });
     params.define('audio.smoothing', { min: 0, max: 0.98, default: 0.6, step: 0.01, label: 'suavizado' });
     params.define('audio.beatSens', { min: 1, max: 3, default: 1.5, step: 0.01, label: 'sensibilidad beat' });
@@ -36,12 +39,46 @@ export class AudioInput {
       this.analyser.smoothingTimeConstant = 0.5;
       src.connect(this.analyser);
       this.data = new Uint8Array(this.analyser.frequencyBinCount);
+      this.active = true;
       this.log('Audio conectado');
       return true;
     } catch (e) { this.log(`Audio: ${e.message}`); return false; }
   }
 
+  /** Reproduce un archivo de audio (mp3/wav) en loop y lo analiza. */
+  async playFile(file) {
+    try {
+      if (!this.ctx) this.ctx = new AudioContext();
+      await this.ctx.resume();
+      if (!this.analyser) {
+        this.analyser = this.ctx.createAnalyser();
+        this.analyser.fftSize = 1024; this.analyser.smoothingTimeConstant = 0.5;
+        this.data = new Uint8Array(this.analyser.frequencyBinCount);
+      }
+      if (this.element) { this.element.pause(); this.element.src = ''; }
+      const el = new Audio(URL.createObjectURL(file));
+      el.loop = true; el.crossOrigin = 'anonymous';
+      const src = this.ctx.createMediaElementSource(el);
+      src.connect(this.analyser);
+      this.analyser.connect(this.ctx.destination);
+      await el.play();
+      this.element = el;
+      this.active = true;
+      this.log(`Audio: ${file.name}`);
+      return true;
+    } catch (e) { this.log(`Audio: ${e.message}`); return false; }
+  }
+
+  /** Abre un selector de archivo (necesita un gesto del usuario). */
+  pickFile() {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'audio/*';
+    input.onchange = () => { if (input.files[0]) this.playFile(input.files[0]); };
+    input.click();
+  }
+
   update(dt) {
+    this.beat = false;
     if (!this.analyser) return;
     this.analyser.getByteFrequencyData(this.data);
     const nyq = this.ctx.sampleRate / 2, n = this.data.length;
@@ -65,6 +102,7 @@ export class AudioInput {
     this.beatCooldown -= dt;
     const isBeat = raw.bass > this.beatAvg * this.params.get('audio.beatSens') && raw.bass > 0.1 && this.beatCooldown <= 0;
     if (isBeat) this.beatCooldown = 0.18;
+    this.beat = isBeat;
     this.params.feed('audio:beat', isBeat ? 1 : 0, 'audio');
   }
 }

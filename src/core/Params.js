@@ -171,6 +171,26 @@ export class Params extends EventTarget {
     for (const [k, id] of Object.entries(json.bindings ?? {})) this.bindings.set(k, id);
   }
 
+  /** Copia los valores de ciertos grupos dentro de otra clave (ej. de la calibración a la app). */
+  mergeInto(key, groups) {
+    let json = {};
+    try { json = JSON.parse(localStorage.getItem(key) || '{}'); } catch (_) { /* */ }
+    json.values = json.values || {};
+    for (const d of this.defs.values()) if (groups.includes(d.group) && d.type !== 'trigger') json.values[d.id] = d.value;
+    try { localStorage.setItem(key, JSON.stringify(json)); } catch (_) { /* */ }
+  }
+
+  /** Lee de otra clave solo los valores de ciertos grupos. */
+  loadGroups(key, groups) {
+    try {
+      const json = JSON.parse(localStorage.getItem(key) || '{}');
+      for (const [id, v] of Object.entries(json.values || {})) {
+        if (!groups.includes(id.split('.')[0])) continue;
+        if (this.defs.has(id)) this.set(id, v, 'restore'); else this.pending[id] = v;
+      }
+    } catch (_) { /* */ }
+  }
+
   save(key = '3deyes.params') {
     try { localStorage.setItem(key, JSON.stringify(this.toJSON())); } catch (_) { /* sin storage */ }
   }

@@ -16,13 +16,14 @@ npm run osc-bridge # opcional: OSC udp:9000 → ws:8080
 
 | Tecla | Acción |
 |---|---|
-| `1` `2` `3` / espacio | escena: Habitación · Fluido · Metaballs |
+| `1` `2` `3` `4` / espacio | escena: Habitación · Fluido · Metaballs · Track |
 | `M` | siguiente modo estéreo: mono → parallel → cross → over/under → anaglyph |
 | `S` | intercambiar ojos |
 | `←` `→` | separación de ojos (profundidad). Shift = paso grande |
 | `↑` `↓` | plano de convergencia (qué queda "en la pared") |
 | `D` | mapa de profundidad (blanco cerca, negro lejos) |
 | `P` | corner-pin: arrastrar las 4 esquinas para calzar la imagen en el mural |
+| `C` | abre la página de calibración (distancia del público) |
 | `G` / `H` | mostrar GUI / ayuda |
 | `F` | pantalla completa |
 | `R` | reset de los parámetros de la escena actual |
@@ -59,6 +60,46 @@ npm run osc-bridge # opcional: OSC udp:9000 → ws:8080
 - Corner-pin (`P`) corrige un proyector en ángulo o una pared que no es plana
   rectángulo. Se guarda en localStorage del navegador.
 - Rendimiento: `look.pixelRatio` baja la resolución interna si el proyector es 4K.
+
+## Calibración 3D: ¿a qué distancia tiene que estar el público?
+
+`http://localhost:5173/calibrate.html` (o tecla `C` desde la app). Es un
+escenario 3D a escala real, al estilo CineShader: una nave oscura con piso
+reflectante, el mural con el tamaño físico medido, una silueta humana parada a
+la distancia calculada y la geometría de vergencia dibujada en el espacio.
+
+**Medir el mural.** Poner la página a pantalla completa en el proyector con el
+contenido "patrón": la barra roja mide exactamente el 50 % del ancho del canvas.
+Medirla con cinta en la pared y cargar el valor en `medidas.barraCm`. Con eso y
+la resolución del proyector la página conoce metros por píxel.
+
+**Lo que muestra el escenario.**
+- El mural con lo que saldría del proyector: un shader estilo Shadertoy con
+  relieve 2.5D (rgb = color, alpha = altura, oclusión automática, convención
+  CineShader), el patrón de calibración, o una escena real de la app.
+- Zonas en el piso: rojo (demasiado cerca), amarillo (funciona), verde (cómodo),
+  con marcas cada metro. Siluetas fantasma en la distancia mínima y la cómoda.
+- Líneas ojo → imagen con el punto de convergencia (cross-eye), y los objetos
+  virtuales: dónde queda en el espacio el objeto más cercano de la escena y el
+  fondo, con la diferencia de vergencia en grados.
+- Vistas: general, **desde el público** (la cámara en los ojos del espectador),
+  lateral y cenital (teclas 1–4).
+
+**Cálculos** (`src/core/StereoMath.js`, umbrales en `LIMITS`):
+- **cross-eye**: distancia mínima (convergencia ≤ 15°) y cómoda (≤ 8°),
+- **parallel**: viable si la separación de centros ≤ IPD; si no, qué distancia haría falta,
+- **anaglifo / disparidad**: distancia para que la diferencia de vergencia entre
+  la pared y el objeto más cercano sea ≤ 1.5° (≤ 1° cómodo),
+- **eyeSep máximo** para que el fondo no obligue a divergir (paralaje ≤ IPD).
+
+**Shader del mural.** Tecla `E` abre el editor: pegar cualquier `mainImage`
+de Shadertoy (sin texturas ni buffers), compilar, y queda guardado en el
+navegador. Presets: ripple, turbulence, domain, grid.
+
+**Botones** (carpeta "conexiones"): guardar calibración (la app la usa para
+mostrar la distancia del público en el HUD), aplicar estéreo y escenas a la
+app, usar eyeSep máximo. Todos los parámetros de la página están en el mismo
+bus que la app, así que también se pueden mover desde MIDI, ESP32 u OSC.
 
 ## Control externo
 
@@ -97,7 +138,7 @@ llaman `serial:k0`, `serial:b0`… y se asignan con learn. También acepta
 
 ### Audio en vivo
 
-GUI → "audio (mic / loopback)". Publica `audio:level`, `audio:bass`, `audio:mid`,
+GUI → "audio (mic / loopback)" o "audio: archivo de música" (mp3/wav en loop). Publica `audio:level`, `audio:bass`, `audio:mid`,
 `audio:high` y `audio:beat`, asignables con learn a cualquier parámetro (por
 ejemplo `blob.smoothK` con los graves, `fluid.burst` con el beat). Para tomar
 el master de Ableton usar BlackHole / Loopback como dispositivo de entrada.
@@ -111,6 +152,19 @@ el master de Ableton usar BlackHole / Loopback como dispositivo de entrada.
 - **Metaballs** (`blob.*`): superficies fluidas raymarcheadas con fusión suave,
   ondulación por ruido, piso, luz. El estéreo es exacto porque los rayos salen
   de la proyección de cada ojo.
+- **Track** (`track.*`): viaje por un túnel neón (inspirado en TRACK de Little
+  Workshop). La cámara recorre un circuito cerrado de ~1 km; los objetos de
+  cuerpo oscuro y bordes de luz aparecen al ritmo y pasan de largo; cada N beats
+  un portal que destella al atravesarlo. El ritmo sale del reloj interno
+  (`track.bpm`), del beat del audio (desactivar `autoBeat`, conectar audio o
+  cargar un archivo de música) o del trigger `track.beat` (MIDI / OSC / ESP32).
+  El mouse mira alrededor; el objeto que queda en el centro se activa con clic
+  o con `track.hit`: destella, gira y se aparta. `track.reverse` invierte el
+  sentido. Sección cuadrada, octogonal o circular, radio, anillos, colores,
+  intensidad neón, niebla, partículas. `track.pulse` es asignable al audio
+  (por ejemplo `audio:bass`) para que el túnel respire con la música.
+- **Bloom** (`look.bloom`, umbral y radio): halo de luz por ojo, antes de la
+  composición estéreo, así el neón funciona en cross, parallel y anaglifo.
 - **Depth look** (`look.depth`): cualquier escena como mapa de profundidad.
 
 ## Agregar una escena

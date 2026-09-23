@@ -8,9 +8,10 @@ import GUI from 'lil-gui';
  * - Clic derecho sobre el nombre → borra la asignación.
  */
 export class Gui {
-  constructor(params, actions = {}) {
+  constructor(params, actions = {}, openGroups = ['stereo', 'scene'], title = '3Deyes') {
     this.params = params;
-    this.gui = new GUI({ title: '3Deyes' });
+    this.openGroups = openGroups;
+    this.gui = new GUI({ title });
     this.folders = new Map();
     this.controllers = new Map();
     this.actions = actions;
@@ -34,7 +35,7 @@ export class Gui {
     if (!this.folders.has(group)) {
       const f = this.gui.addFolder(group);
       this.folders.set(group, f);
-      if (group !== 'stereo' && group !== 'scene') f.close();
+      if (!this.openGroups.includes(group)) f.close();
     }
     return this.folders.get(group);
   }

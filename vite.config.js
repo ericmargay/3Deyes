@@ -2,5 +2,9 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   server: { port: 5173, host: true },
-  build: { target: 'esnext', sourcemap: true },
+  build: {
+    target: 'esnext',
+    sourcemap: true,
+    rollupOptions: { input: { main: 'index.html', calibrate: 'calibrate.html' } },
+  },
 });

@@ -6,13 +6,15 @@ import { DepthLook } from '../scenes/BaseScene.js';
 import { RoomScene } from '../scenes/RoomScene.js';
 import { FluidScene } from '../scenes/FluidScene.js';
 import { BlobScene } from '../scenes/BlobScene.js';
+import { TrackScene } from '../scenes/TrackScene.js';
 import { MidiInput } from '../control/Midi.js';
 import { SerialInput } from '../control/Serial.js';
 import { SocketInput } from '../control/Socket.js';
 import { AudioInput } from '../control/Audio.js';
 import { Gui } from '../control/Gui.js';
+import { analyze, fmtM, loadCalibration } from './StereoMath.js';
 
-const SCENES = [RoomScene, FluidScene, BlobScene];
+const SCENES = [RoomScene, FluidScene, BlobScene, TrackScene];
 
 export class App {
   constructor() {
@@ -55,15 +57,20 @@ export class App {
       'serial (ESP32)': () => this.serial.connect(),
       'WebSocket / OSC': () => this.socket.connect(),
       'audio (mic / loopback)': () => this.audio.connect(),
+      'audio: archivo de música': () => this.audio.pickFile(),
       'reset parámetros': () => p.reset(),
       'reset corner-pin': () => this.cornerPin.reset(),
       'fullscreen': () => this.toggleFullscreen(),
+      'calibración (C)': () => window.open('/calibrate.html', '_blank'),
     });
+    this.calib = loadCalibration();
+    window.addEventListener('focus', () => { this.calib = loadCalibration(); });
 
     p.load();
     // ?stereo.mode=cross&scene.current=fluid&look.depth=1 → arranque configurado (útil para la instalación)
     for (const [k, v] of new URLSearchParams(location.search)) {
       if (p.has(k)) p.set(k, p.def(k).type === 'boolean' ? v === '1' || v === 'true' : v, 'url');
+      else if (k.includes('.')) p.pending[k] = v === 'true' ? true : v === 'false' ? false : Number.isNaN(Number(v)) ? v : Number(v);
     }
     p.onChange((id, value, source) => {
       if (id === 'scene.current') this.setScene(value);
@@ -80,6 +87,10 @@ export class App {
 
     window.addEventListener('resize', () => this.resize());
     window.addEventListener('keydown', (e) => this.onKey(e));
+    // puntero → escena actual (mirar alrededor, activar objetos)
+    const norm = (e) => [(e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1];
+    this.renderer.domElement.addEventListener('pointermove', (e) => { const [x, y] = norm(e); this.current?.onPointerMove?.(x, y); });
+    this.renderer.domElement.addEventListener('pointerdown', (e) => { const [x, y] = norm(e); this.current?.onPointerDown?.(x, y); });
     this.midi.connect().catch(() => {});
     this.setScene(p.get('scene.current'));
     this.resize();
@@ -132,6 +143,7 @@ export class App {
     else if (k === 'f') this.toggleFullscreen();
     else if (k === 'r') this.params.reset(this.current.key);
     else if (k === 'd') this.params.set('look.depth', !this.params.get('look.depth'));
+    else if (k === 'c') window.open('/calibrate.html', '_blank');
     else if (k === ' ') this.nextScene();
     else if (k === 'arrowleft' || k === 'arrowright') {
       const d = this.params.def('stereo.eyeSep');
@@ -169,11 +181,28 @@ export class App {
     if (this.fpsT >= 0.5) { this.fps = Math.round(this.frames / this.fpsT); this.frames = 0; this.fpsT = 0; }
     const p = this.params;
     const learn = p.learnTarget ? `\nLEARN → ${p.learnTarget}  (mové un control)` : '';
+    const dist = this.distanceLine();
     this.hud.textContent =
       `${this.current.title}   ${p.get('stereo.mode')}${p.get('stereo.swap') ? ' (swap)' : ''}   ` +
       `eyeSep ${p.get('stereo.eyeSep').toFixed(3)}  focus ${p.get('stereo.focus').toFixed(2)}   ${this.fps} fps` +
       (p.get('look.depth') ? '   [depth]' : '') + (this.cornerPin.edit ? '   [corner-pin]' : '') +
-      learn + (this.logLines.length ? '\n' + this.logLines.join('\n') : '');
+      dist + learn + (this.logLines.length ? '\n' + this.logLines.join('\n') : '');
+  }
+
+  /** Distancia recomendada del público según la calibración guardada (página /calibrate.html). */
+  distanceLine() {
+    const c = this.calib;
+    if (!c) return '\n[C] calibrar proyección para ver la distancia del público';
+    const p = this.params, size = this.renderer.getSize(new THREE.Vector2()), pr = this.renderer.getPixelRatio();
+    const a = analyze({
+      mode: p.get('stereo.mode'), scale: p.get('stereo.scale'), gap: p.get('stereo.gap'),
+      eyeSep: p.get('stereo.eyeSep'), focus: p.get('stereo.focus'), fov: this.current.camera.fov,
+      screenW: c.screenW, pxW: size.x * pr, pxH: size.y * pr, ipd: c.ipd, zNear: c.zNear,
+    });
+    const r = a.rec;
+    return r.ok
+      ? `\npúblico desde ${fmtM(r.dMin)} (cómodo ${fmtM(r.dComfort)}) · ${r.note} · eyeSep máx ${a.disparity.eyeSepMax.toFixed(3)}`
+      : `\n${r.note}`;
   }
 }
 

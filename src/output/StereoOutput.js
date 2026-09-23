@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { computeLayout } from '../core/StereoMath.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 /**
  * Salida estéreo.
@@ -129,7 +131,20 @@ export class StereoOutput {
     this.quadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material));
 
     this.eyeW = 2; this.eyeH = 2;
+    // bloom (luces neón): se aplica sobre cada ojo antes de componer
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 1, 0.4, 0.9);
+    this.bloomW = 0; this.bloomH = 0;
     this.defineParams();
+  }
+
+  applyBloom(rt) {
+    const strength = this.params.get('look.bloom');
+    if (strength <= 0) return;
+    if (this.bloomW !== rt.width || this.bloomH !== rt.height) { this.bloom.setSize(rt.width, rt.height); this.bloomW = rt.width; this.bloomH = rt.height; }
+    this.bloom.strength = strength;
+    this.bloom.threshold = this.params.get('look.bloomThreshold');
+    this.bloom.radius = this.params.get('look.bloomRadius');
+    this.bloom.render(this.renderer, null, rt, 0, false);
   }
 
   defineParams() {
@@ -143,6 +158,9 @@ export class StereoOutput {
     p.define('stereo.fusionDots', { default: true, label: 'puntos de fusión' });
     p.define('stereo.anaglyphStyle', { type: 'option', options: ['dubois', 'color', 'gray'], default: 'dubois', label: 'estilo anaglifo' });
     p.define('stereo.bg', { type: 'number', min: 0, max: 1, default: 0.0, step: 0.001, label: 'fondo (gris)' });
+    p.define('look.bloom', { min: 0, max: 3, default: 0.8, step: 0.01, label: 'bloom (neón)' });
+    p.define('look.bloomThreshold', { min: 0, max: 1.5, default: 0.9, step: 0.01, label: 'bloom umbral' });
+    p.define('look.bloomRadius', { min: 0, max: 1, default: 0.5, step: 0.01, label: 'bloom radio' });
   }
 
   nextMode() {
@@ -153,33 +171,10 @@ export class StereoOutput {
 
   /** Calcula rectángulos (en 0..1) y tamaño de textura por ojo. */
   layout(W, H) {
-    const s = this.params.get('stereo.scale');
-    const gap = this.params.get('stereo.gap');
     const mode = this.params.get('stereo.mode');
-    const rL = new THREE.Vector4(), rR = new THREE.Vector4();
-    let eyeW, eyeH;
-    if (mode === 'parallel' || mode === 'cross') {
-      const halfW = 0.5 - gap / 2;
-      const w = halfW * s, h = s;
-      const y = (1 - h) / 2;
-      // cada imagen centrada en su mitad
-      rL.set((halfW - w) / 2, y, w, h);
-      rR.set(0.5 + gap / 2 + (halfW - w) / 2, y, w, h);
-      eyeW = Math.round(W * w); eyeH = Math.round(H * h);
-    } else if (mode === 'overunder') {
-      const halfH = 0.5 - gap / 2;
-      const w = s, h = halfH * s;
-      const x = (1 - w) / 2;
-      rL.set(x, 0.5 + gap / 2 + (halfH - h) / 2, w, h);
-      rR.set(x, (halfH - h) / 2, w, h);
-      eyeW = Math.round(W * w); eyeH = Math.round(H * h);
-    } else {
-      const w = s, h = s;
-      rL.set((1 - w) / 2, (1 - h) / 2, w, h);
-      rR.copy(rL);
-      eyeW = Math.round(W * w); eyeH = Math.round(H * h);
-    }
-    return { rL, rR, eyeW: Math.max(2, eyeW), eyeH: Math.max(2, eyeH), mode };
+    const { rL: l, rR: r } = computeLayout(mode, this.params.get('stereo.scale'), this.params.get('stereo.gap'));
+    const rL = new THREE.Vector4(l.x, l.y, l.w, l.h), rR = new THREE.Vector4(r.x, r.y, r.w, r.h);
+    return { rL, rR, eyeW: Math.max(2, Math.round(W * l.w)), eyeH: Math.max(2, Math.round(H * l.h)), mode };
   }
 
   /**
@@ -212,10 +207,10 @@ export class StereoOutput {
 
     const prevTarget = r.getRenderTarget();
     if (mode === 'mono') {
-      r.setRenderTarget(this.rtL); r.clear(); r.render(scene, camera);
+      r.setRenderTarget(this.rtL); r.clear(); r.render(scene, camera); this.applyBloom(this.rtL);
     } else {
-      r.setRenderTarget(this.rtL); r.clear(); r.render(scene, camL);
-      r.setRenderTarget(this.rtR); r.clear(); r.render(scene, camR);
+      r.setRenderTarget(this.rtL); r.clear(); r.render(scene, camL); this.applyBloom(this.rtL);
+      r.setRenderTarget(this.rtR); r.clear(); r.render(scene, camR); this.applyBloom(this.rtR);
     }
 
     // composición
