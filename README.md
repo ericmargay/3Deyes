@@ -24,6 +24,7 @@ npm run osc-bridge # opcional: OSC udp:9000 → ws:8080
 | `D` | mapa de profundidad (blanco cerca, negro lejos) |
 | `P` | corner-pin: arrastrar las 4 esquinas para calzar la imagen en el mural |
 | `C` | abre la página de calibración (distancia del público) |
+| `E` | abre el editor de escenas |
 | `G` / `H` | mostrar GUI / ayuda |
 | `F` | pantalla completa |
 | `R` | reset de los parámetros de la escena actual |
@@ -100,6 +101,43 @@ navegador. Presets: ripple, turbulence, domain, grid.
 mostrar la distancia del público en el HUD), aplicar estéreo y escenas a la
 app, usar eyeSep máximo. Todos los parámetros de la página están en el mismo
 bus que la app, así que también se pueden mover desde MIDI, ESP32 u OSC.
+
+## Editor de escenas
+
+`http://localhost:5173/editor.html` (o tecla `E` desde la app). Las escenas son
+las plantillas: el editor guarda encima un **proyecto** que la app reproduce.
+Se puede editar en una ventana mientras la app proyecta en otra: la app recarga
+el proyecto en cuanto se guarda.
+
+**Paneles.**
+- *Objetos*: árbol de la escena (mallas, luces, grupos, partículas). Ojo para
+  ocultar. Clic para seleccionar; en el viewport también.
+- *Parámetros*: todos los parámetros de la escena, la salida estéreo y el look,
+  con doble clic para asignar un control físico.
+- *Viewport*: cámara orbital propia, gizmo mover / rotar / escalar (W / E / R),
+  enfocar (F), "animar" para que la escena siga viva mientras se edita.
+  Modo **reproducir** (Tab): se ve exactamente la salida de la app, con el
+  modo estéreo elegido, y los clics y teclas disparan las reglas.
+- *Inspector*: transformación y material del objeto seleccionado, con ◆ para
+  grabar un keyframe de cada propiedad; edición del keyframe o cue elegido.
+- *Línea de tiempo*: pistas de parámetros (`param:room.hue`) u objetos
+  (`obj:decoración/nudo:position.y`), keyframes con curva (linear, smooth,
+  easeIn, easeOut, step), cues que disparan acciones, grilla de beats con imán,
+  loop, duración y auto-play en la app. **● grabar**: cada parámetro u objeto
+  que se mueve crea keyframes en el tiempo actual.
+- *Interacciones*: reglas "cuando → entonces". Disparadores: clic en objeto,
+  tecla, control físico (MIDI, OSC, serial, audio), beat, portal atravesado,
+  objeto activado, entrar a la escena, parámetro que supera un valor. Acciones:
+  fijar o animar un parámetro, alternar, disparar un trigger, cambiar de escena,
+  reproducir / pausar / detener / ir a un tiempo de la línea de tiempo.
+- *Conexiones*: tabla fuente → parámetro con mapeo (min, max, invertir,
+  suavizado) y learn.
+
+**Presets**: guardan los parámetros de la escena con un nombre. **Exportar /
+importar** mueven el proyecto como JSON. Todo se persiste en el navegador.
+
+El modelo vive en `src/editor/Project.js`; `Timeline.js` y `Rules.js` son los
+motores que corren tanto en el editor como en la app.
 
 ## Control externo
 

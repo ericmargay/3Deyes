@@ -16,6 +16,7 @@ export class Params extends EventTarget {
     this.learnTarget = null;   // id esperando asignación desde un controlador
     this.lastFeed = new Map();  // último valor recibido por fuente
     this.pending = {};          // valores cargados para ids aún no definidos
+    this.maps = new Map();      // sourceKey -> { min, max, invert, smooth } (mapeo de la fuente antes de aplicar)
   }
 
   /** Marca un parámetro para que el próximo control físico que se mueva quede asignado. */
@@ -51,6 +52,13 @@ export class Params extends EventTarget {
     const last = this.lastFeed.get(sourceKey);
     this.lastFeed.set(sourceKey, n);
     const moved = last === undefined || Math.abs(n - last) > 0.05;
+    this.dispatchEvent(new CustomEvent('input', { detail: { sourceKey, n, source, moved } }));
+    const m = this.maps.get(sourceKey);
+    if (m) {
+      if (m.invert) n = 1 - n;
+      n = (m.min ?? 0) + ((m.max ?? 1) - (m.min ?? 0)) * n;
+      if (m.smooth > 0) { m._v = m._v === undefined ? n : m._v * m.smooth + n * (1 - m.smooth); n = m._v; }
+    }
     if (this.learnTarget && moved) {
       this.bind(sourceKey, this.learnTarget);
       const id = this.learnTarget;
@@ -162,13 +170,15 @@ export class Params extends EventTarget {
   toJSON() {
     const values = {};
     for (const [id, d] of this.defs) if (d.type !== 'trigger') values[id] = d.value;
-    return { values, bindings: Object.fromEntries(this.bindings) };
+    const maps = {}; for (const [k, m] of this.maps) maps[k] = { min: m.min, max: m.max, invert: m.invert, smooth: m.smooth };
+    return { values, bindings: Object.fromEntries(this.bindings), maps };
   }
 
   fromJSON(json) {
     if (!json) return;
     for (const [id, v] of Object.entries(json.values ?? {})) { if (this.defs.has(id)) this.set(id, v, 'restore'); else this.pending[id] = v; }
     for (const [k, id] of Object.entries(json.bindings ?? {})) this.bindings.set(k, id);
+    for (const [k, m] of Object.entries(json.maps ?? {})) this.maps.set(k, { ...m });
   }
 
   /** Copia los valores de ciertos grupos dentro de otra clave (ej. de la calibración a la app). */

@@ -13,6 +13,9 @@ import { SocketInput } from '../control/Socket.js';
 import { AudioInput } from '../control/Audio.js';
 import { Gui } from '../control/Gui.js';
 import { analyze, fmtM, loadCalibration } from './StereoMath.js';
+import { Project, STORAGE_KEY, nameObjects, applyOverrides } from '../editor/Project.js';
+import { TimelinePlayer } from '../editor/Timeline.js';
+import { RuleEngine } from '../editor/Rules.js';
 
 const SCENES = [RoomScene, FluidScene, BlobScene, TrackScene];
 
@@ -20,6 +23,7 @@ export class App {
   constructor() {
     this.params = new Params();
     this.logLines = [];
+    this.events = new EventTarget();
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -37,6 +41,12 @@ export class App {
     p.define('look.exposure', { min: 0.1, max: 3, default: 1, step: 0.01, label: 'exposición' });
     p.define('look.pixelRatio', { min: 0.25, max: 2, default: Math.min(window.devicePixelRatio, 2), step: 0.05, label: 'resolución (pixel ratio)' });
     p.define('look.timeScale', { min: 0, max: 3, default: 1, step: 0.01, label: 'velocidad del tiempo' });
+
+    // proyecto del editor: overrides de objetos, línea de tiempo y reglas por escena
+    this.project = Project.load();
+    this.timeline = new TimelinePlayer(p, { getRoot: () => this.current?.scene, runAction: (a) => this.rules.run(a) });
+    this.rules = new RuleEngine(p, { setScene: (n) => this.setScene(n), nextScene: () => this.nextScene(), timeline: this.timeline, log: (m) => this.log(m) });
+    window.addEventListener('storage', (e) => { if (e.key === STORAGE_KEY) { this.project = Project.load(); this.applyProject(); } });
 
     this.stereo = new StereoOutput(this.renderer, p);
     this.cornerPin = new CornerPin(this.renderer);
@@ -62,6 +72,7 @@ export class App {
       'reset corner-pin': () => this.cornerPin.reset(),
       'fullscreen': () => this.toggleFullscreen(),
       'calibración (C)': () => window.open('/calibrate.html', '_blank'),
+      'editor de escenas (E)': () => window.open('/editor.html', '_blank'),
     });
     this.calib = loadCalibration();
     window.addEventListener('focus', () => { this.calib = loadCalibration(); });
@@ -90,7 +101,11 @@ export class App {
     // puntero → escena actual (mirar alrededor, activar objetos)
     const norm = (e) => [(e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1];
     this.renderer.domElement.addEventListener('pointermove', (e) => { const [x, y] = norm(e); this.current?.onPointerMove?.(x, y); });
-    this.renderer.domElement.addEventListener('pointerdown', (e) => { const [x, y] = norm(e); this.current?.onPointerDown?.(x, y); });
+    this.renderer.domElement.addEventListener('pointerdown', (e) => {
+      const [x, y] = norm(e); this.current?.onPointerDown?.(x, y);
+      const obj = this.pick(x, y);
+      this.emit('click', { x, y, object: obj, path: obj ? pathOfObject(obj, this.current.scene) : null });
+    });
     this.midi.connect().catch(() => {});
     this.setScene(p.get('scene.current'));
     this.resize();
@@ -116,6 +131,34 @@ export class App {
     this.current.enter();
     this.params.set('scene.current', next.key, 'app');
     this.resize();
+    this.applyProject();
+    this.emit('enter', { scene: next.key });
+  }
+
+  /** Emite un evento (para las reglas de interacción y para quien escuche). */
+  emit(type, detail = {}) {
+    this.events.dispatchEvent(new CustomEvent(type, { detail }));
+    this.rules?.handle(type, detail);
+  }
+
+  /** Aplica al la escena actual lo que el editor guardó: overrides, reglas y línea de tiempo. */
+  applyProject() {
+    if (!this.current) return;
+    nameObjects(this.current.scene);
+    const ps = this.project.scene(this.current.key);
+    applyOverrides(this.current.scene, ps.overrides);
+    this.rules.load(ps.rules);
+    this.timeline.load(ps.timeline, true);
+  }
+
+  /** Objeto de la escena bajo el puntero (cámara de la escena). */
+  pick(x, y) {
+    const scene = this.current; if (!scene) return null;
+    const ray = this._ray || (this._ray = new THREE.Raycaster());
+    ray.params.Line.threshold = 0.2; ray.params.Points.threshold = 0.2;
+    ray.setFromCamera(new THREE.Vector2(x, y), scene.camera);
+    const hits = ray.intersectObjects(scene.scene.children, true).filter((h) => h.object.visible && !h.object.userData.helper);
+    return hits[0]?.object ?? null;
   }
 
   nextScene() {
@@ -134,6 +177,8 @@ export class App {
   onKey(e) {
     if (e.target.tagName === 'INPUT') return;
     const k = e.key.toLowerCase();
+    this.emit('key', { key: e.key });
+    if (k === 'e') { window.open('/editor.html', '_blank'); return; }
     if (k >= '1' && k <= '9') { const s = this.scenes[Number(k) - 1]; if (s) this.setScene(s.key); }
     else if (k === 'm') this.stereo.nextMode();
     else if (k === 's') this.params.set('stereo.swap', !this.params.get('stereo.swap'));
@@ -163,8 +208,11 @@ export class App {
     const dt = Math.min(this.clock.getDelta(), 0.1) * this.params.get('look.timeScale');
     this.time += dt;
     this.audio.update(dt);
+    if (this.audio.beat) this.emit('beat', {});
     const scene = this.current;
     scene.update(dt, this.time);
+    this.timeline.update(dt);
+    this.rules.update(dt);
     this.renderer.toneMappingExposure = this.params.get('look.exposure');
 
     if (!scene.handlesDepthLook) this.depthLook.apply(scene.scene, scene.camera);
@@ -204,6 +252,12 @@ export class App {
       ? `\npúblico desde ${fmtM(r.dMin)} (cómodo ${fmtM(r.dComfort)}) · ${r.note} · eyeSep máx ${a.disparity.eyeSepMax.toFixed(3)}`
       : `\n${r.note}`;
   }
+}
+
+function pathOfObject(obj, root) {
+  const parts = []; let o = obj;
+  while (o && o !== root) { parts.unshift(o.name || o.type); o = o.parent; }
+  return parts.join('/');
 }
 
 export { STEREO_MODES };

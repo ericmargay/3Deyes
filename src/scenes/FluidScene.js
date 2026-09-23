@@ -162,6 +162,7 @@ export class FluidScene extends BaseScene {
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     });
     this.points = new THREE.Points(geo, this.pointMat);
+    this.points.name = 'partículas';
     this.points.frustumCulled = false;
     this.scene.add(this.points);
   }

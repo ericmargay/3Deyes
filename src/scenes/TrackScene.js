@@ -149,7 +149,9 @@ export class TrackScene extends BaseScene {
     }
     const mk = (pts, mat) => { const g = new THREE.BufferGeometry().setFromPoints(pts); const l = new THREE.LineSegments(g, mat); l.frustumCulled = false; return l; };
     this.rings = mk(ringPts, this.ringMat); this.rails = mk(railPts, this.railMat);
+    this.rings.name = 'anillos'; this.rails.name = 'rieles';
     this.occluder = new THREE.Mesh(new THREE.TubeGeometry(this.curve, 600, radius * 1.25, 8, true), new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide }));
+    this.occluder.name = 'túnel (oclusor)';
     this.scene.add(this.rings, this.rails, this.occluder);
   }
 
@@ -163,6 +165,7 @@ export class TrackScene extends BaseScene {
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e4);
     this.points = new THREE.Points(geo, this.pointMat);
+    this.points.name = 'partículas';
     this.points.frustumCulled = false;
     this.scene.add(this.points);
   }
@@ -185,8 +188,8 @@ export class TrackScene extends BaseScene {
     this.buildParticles();
 
     // luces: ambiente muy bajo + una luz que viaja con la cámara
-    s.add(new THREE.AmbientLight(0x223355, 0.6));
-    this.camLight = new THREE.PointLight(0x4477ff, 60, 60, 1.5);
+    const amb = new THREE.AmbientLight(0x223355, 0.6); amb.name = 'luz ambiente'; s.add(amb);
+    this.camLight = new THREE.PointLight(0x4477ff, 60, 60, 1.5); this.camLight.name = 'luz de la cámara';
     s.add(this.camLight);
 
     // objetos: cuerpo oscuro + bordes neón
@@ -204,7 +207,7 @@ export class TrackScene extends BaseScene {
       const g = new THREE.Group();
       const body = new THREE.Mesh(this.types[0].geo, this.bodyMat);
       const edges = new THREE.LineSegments(this.types[0].edges, new THREE.LineBasicMaterial({ color: 0x44aaff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-      g.add(body, edges); g.visible = false;
+      g.add(body, edges); g.visible = false; g.name = `objeto ${i}`; body.name = 'cuerpo'; edges.name = 'bordes';
       s.add(g);
       this.objects.push({ g, body, edges, active: false, s: 0, spin: new THREE.Vector3(), vel: new THREE.Vector3(), flash: 0, boost: 0 });
     }
@@ -213,7 +216,7 @@ export class TrackScene extends BaseScene {
       const g = new THREE.Group();
       const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
       const outer = new THREE.LineLoop(new THREE.BufferGeometry(), mat), inner = new THREE.LineLoop(new THREE.BufferGeometry(), mat), spokes = new THREE.LineSegments(new THREE.BufferGeometry(), mat);
-      g.add(outer, inner, spokes); g.visible = false; s.add(g);
+      g.add(outer, inner, spokes); g.visible = false; g.name = `portal ${i}`; s.add(g);
       this.gates.push({ g, outer, inner, spokes, mat, active: false, s: 0, passed: false, flash: 0 });
     }
 
@@ -286,6 +289,7 @@ export class TrackScene extends BaseScene {
     _v1.subVectors(o.g.position, f.pos); if (_v1.lengthSq() < 1e-4) _v1.copy(f.nor);
     o.vel.copy(_v1.normalize().multiplyScalar(4)).addScaledVector(f.tan, this.dir() * 6);
     this.flash = 1;
+    this.app.emit?.('hit', { path: o.g.name });
   }
 
   // ---------- actos ----------
@@ -397,6 +401,7 @@ export class TrackScene extends BaseScene {
       if (!gt.passed && rel < 0) {
         gt.passed = true; gt.flash = 1; this.flash = Math.max(this.flash, 0.6);
         this.gateCount++;
+        this.app.emit?.('gate', { count: this.gateCount });
         if (v('actsAuto') && this.gateCount % Math.max(1, Math.round(v('actEveryGates'))) === 0) this.nextAct();
       }
       gt.flash = Math.max(0, gt.flash - dt * 2);

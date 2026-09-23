@@ -134,6 +134,7 @@ export class BlobScene extends BaseScene {
       vertexShader: vert, fragmentShader: frag, depthTest: false, depthWrite: false,
     });
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material);
+    this.quad.name = 'raymarch';
     this.quad.frustumCulled = false;
     this.quad.onBeforeRender = (_r, _s, camera) => {
       this.material.uniforms.projInv.value.copy(camera.projectionMatrix).invert();

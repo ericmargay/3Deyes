@@ -8,10 +8,10 @@ import GUI from 'lil-gui';
  * - Clic derecho sobre el nombre → borra la asignación.
  */
 export class Gui {
-  constructor(params, actions = {}, openGroups = ['stereo', 'scene'], title = '3Deyes') {
+  constructor(params, actions = {}, openGroups = ['stereo', 'scene'], title = '3Deyes', container = null) {
     this.params = params;
     this.openGroups = openGroups;
-    this.gui = new GUI({ title });
+    this.gui = new GUI(container ? { title, container } : { title });
     this.folders = new Map();
     this.controllers = new Map();
     this.actions = actions;

@@ -5,6 +5,6 @@ export default defineConfig({
   build: {
     target: 'esnext',
     sourcemap: true,
-    rollupOptions: { input: { main: 'index.html', calibrate: 'calibrate.html' } },
+    rollupOptions: { input: { main: 'index.html', calibrate: 'calibrate.html', editor: 'editor.html' } },
   },
 });

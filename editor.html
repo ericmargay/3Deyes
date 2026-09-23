@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3Deyes · editor</title>
+  <style>
+    :root { color-scheme: dark; --bg: #0e0e12; --panel: #151519; --panel2: #1b1b21; --line: #26262e; --text: #d8d8de; --dim: #8a8a94; --accent: #ff4fa3; --cyan: #4fd1c5; --yellow: #ffd166; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; background: var(--bg); color: var(--text); font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; overflow: hidden; }
+    button, select, input { font: inherit; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; padding: 3px 7px; }
+    button { cursor: pointer; } button:hover { border-color: var(--accent); } button.on { background: var(--accent); color: #000; border-color: var(--accent); }
+    button.cyan.on { background: var(--cyan); border-color: var(--cyan); }
+    input[type=number] { width: 68px; } input[type=text] { width: 120px; } input[type=color] { width: 36px; height: 22px; padding: 0; }
+    label { display: inline-flex; align-items: center; gap: 4px; }
+    #app { display: grid; height: 100%; grid-template-rows: 42px 1fr 250px; grid-template-columns: 290px 1fr 340px; grid-template-areas: "top top top" "left center right" "bottom bottom bottom"; }
+    #top { grid-area: top; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+    #top .logo { color: var(--accent); font-weight: 700; letter-spacing: .08em; margin-right: 6px; }
+    #top .sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+    #top .grow { flex: 1; }
+    #left, #right { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+    #left { grid-area: left; } #right { grid-area: right; border-right: 0; border-left: 1px solid var(--line); }
+    .tabs { display: flex; border-bottom: 1px solid var(--line); }
+    .tabs button { flex: 1; border: 0; border-radius: 0; background: transparent; padding: 7px; color: var(--dim); border-bottom: 2px solid transparent; }
+    .tabs button.on { color: var(--text); background: transparent; border-bottom-color: var(--accent); }
+    .tab { display: none; flex: 1; overflow: auto; min-height: 0; } .tab.on { display: block; }
+    #center { grid-area: center; position: relative; min-width: 0; min-height: 0; background: #000; }
+    #center canvas { display: block; }
+    #hint { position: absolute; left: 10px; bottom: 8px; font-size: 11px; color: var(--dim); background: rgba(0,0,0,.5); padding: 4px 8px; border-radius: 4px; pointer-events: none; white-space: pre; }
+    #vpTools { position: absolute; left: 10px; top: 8px; display: flex; gap: 4px; }
+    #bottom { grid-area: bottom; background: var(--panel); border-top: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+    /* outliner */
+    .tree { padding: 6px 4px; }
+    .node { display: flex; align-items: center; gap: 4px; padding: 2px 4px; border-radius: 3px; cursor: pointer; white-space: nowrap; }
+    .node:hover { background: var(--panel2); } .node.sel { background: #3a1c2c; outline: 1px solid var(--accent); }
+    .node .caret { width: 12px; color: var(--dim); text-align: center; } .node .icon { color: var(--cyan); width: 14px; text-align: center; }
+    .node .name { flex: 1; overflow: hidden; text-overflow: ellipsis; } .node .eye { color: var(--dim); } .node .eye.off { color: #444; }
+    .node.dim { opacity: .5; }
+    /* inspector */
+    .sec { padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    .sec h3 { margin: 0 0 6px; font-size: 11px; color: var(--cyan); text-transform: uppercase; letter-spacing: .08em; display: flex; align-items: center; gap: 6px; }
+    .sec h3 .grow { flex: 1; }
+    .row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+    .row .lbl { width: 78px; color: var(--dim); }
+    .row input[type=number] { width: 60px; }
+    .key { width: 20px; height: 20px; padding: 0; border-radius: 3px; color: var(--dim); font-size: 10px; line-height: 18px; } .key.has { color: var(--yellow); border-color: var(--yellow); }
+    .muted { color: var(--dim); font-size: 11px; }
+    .list { padding: 6px 10px; }
+    .item { display: flex; align-items: center; gap: 6px; padding: 4px 6px; margin: 3px 0; background: var(--panel2); border-radius: 4px; border: 1px solid var(--line); }
+    .item .txt { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .item.sel { border-color: var(--accent); }
+    .form { padding: 8px 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 5px; }
+    .form .row .lbl { width: 90px; }
+    table.conn { width: 100%; border-collapse: collapse; } table.conn td, table.conn th { padding: 3px 4px; border-bottom: 1px solid var(--line); text-align: left; font-weight: normal; } table.conn th { color: var(--dim); }
+    table.conn input[type=number] { width: 50px; }
+    /* timeline */
+    #transport { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+    #transport .time { min-width: 90px; color: var(--yellow); }
+    #tlBody { flex: 1; display: grid; grid-template-columns: 200px 1fr; min-height: 0; }
+    #tlTracks { overflow: hidden; border-right: 1px solid var(--line); }
+    #tlTracks .trow { height: 22px; display: flex; align-items: center; gap: 4px; padding: 0 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    #tlTracks .trow .name { flex: 1; overflow: hidden; text-overflow: ellipsis; } #tlTracks .trow.sel { background: #3a1c2c; }
+    #tlTracks .trow.head { height: 24px; color: var(--dim); background: var(--panel2); }
+    #tlTracks .trow .mini { width: 18px; height: 16px; padding: 0; font-size: 10px; line-height: 14px; }
+    #tlCanvasWrap { position: relative; overflow: hidden; }
+    #tlCanvas { display: block; cursor: crosshair; }
+    .lil-gui.root { --width: 100%; --font-size: 11px; --background-color: transparent; --title-background-color: #1b1b21; --widget-color: #26262e; --hover-color: #30303a; --focus-color: #3a3a46; --number-color: #4fd1c5; --string-color: #ffd166; }
+    .lil-gui.root > .title { display: none; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="top">
+    <span class="logo">3DEYES · EDITOR</span>
+    <label>plantilla <select id="sceneSel"></select></label>
+    <label>preset <select id="presetSel"><option value="">—</option></select></label>
+    <button id="presetSave" title="guarda los parámetros actuales como preset">＋ preset</button>
+    <span class="sep"></span>
+    <button id="modeEdit" class="on">✎ editar</button><button id="modePlay">▶ reproducir</button>
+    <label>cámara <select id="camSel"><option value="editor">editor</option><option value="escena">escena</option></select></label>
+    <label>estéreo <select id="stereoSel"></select></label>
+    <span class="grow"></span>
+    <span id="status" class="muted"></span>
+    <button id="save">guardar</button><button id="export">exportar</button><button id="import">importar</button>
+    <button id="openApp" class="cyan">abrir en la app ↗</button>
+  </div>
+
+  <div id="left">
+    <div class="tabs"><button class="on" data-tab="objects">Objetos</button><button data-tab="params">Parámetros</button></div>
+    <div class="tab on" id="tab-objects"><div class="tree" id="tree"></div></div>
+    <div class="tab" id="tab-params"><div id="guiHost"></div></div>
+  </div>
+
+  <div id="center">
+    <div id="vpTools"><button id="gT" class="on">mover</button><button id="gR">rotar</button><button id="gS">escalar</button><button id="gF">enfocar</button></div>
+    <div id="hint"></div>
+  </div>
+
+  <div id="right">
+    <div class="tabs"><button class="on" data-tab="inspector">Inspector</button><button data-tab="rules">Interacciones</button><button data-tab="conn">Conexiones</button></div>
+    <div class="tab on" id="tab-inspector"><div id="inspector"></div></div>
+    <div class="tab" id="tab-rules"><div id="rules"></div></div>
+    <div class="tab" id="tab-conn"><div id="conn"></div></div>
+  </div>
+
+  <div id="bottom">
+    <div id="transport">
+      <button id="tStart">⏮</button><button id="tPlay">▶</button><button id="tStop">⏹</button>
+      <span class="time" id="tTime">0.00 s</span>
+      <label>dur <input type="number" id="tDur" min="1" step="1"></label>
+      <label>bpm <input type="number" id="tBpm" min="20" step="0.5"></label>
+      <label><input type="checkbox" id="tLoop"> loop</label>
+      <label><input type="checkbox" id="tSnap" checked> imán a beats</label>
+      <label><input type="checkbox" id="tAuto"> auto-play en la app</label>
+      <button id="tRec" title="graba keyframes al mover parámetros u objetos">● grabar</button>
+      <span class="grow" style="flex:1"></span>
+      <label>zoom <input type="range" id="tZoom" min="4" max="120" value="20" style="width:100px"></label>
+      <select id="tAddTrack"><option value="">+ pista…</option></select>
+      <button id="tAddCue">+ cue</button>
+    </div>
+    <div id="tlBody">
+      <div id="tlTracks"></div>
+      <div id="tlCanvasWrap"><canvas id="tlCanvas"></canvas></div>
+    </div>
+  </div>
+</div>
+<script type="module" src="/src/editor.js"></script>
+</body>
+</html>

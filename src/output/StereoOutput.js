@@ -170,8 +170,8 @@ export class StereoOutput {
   }
 
   /** Calcula rectángulos (en 0..1) y tamaño de textura por ojo. */
-  layout(W, H) {
-    const mode = this.params.get('stereo.mode');
+  layout(W, H, modeOverride = null) {
+    const mode = modeOverride || this.params.get('stereo.mode');
     const { rL: l, rR: r } = computeLayout(mode, this.params.get('stereo.scale'), this.params.get('stereo.gap'));
     const rL = new THREE.Vector4(l.x, l.y, l.w, l.h), rR = new THREE.Vector4(r.x, r.y, r.w, r.h);
     return { rL, rR, eyeW: Math.max(2, Math.round(W * l.w)), eyeH: Math.max(2, Math.round(H * l.h)), mode };
@@ -181,13 +181,13 @@ export class StereoOutput {
    * Renderiza scene con camera hacia `target` (WebGLRenderTarget o null = pantalla).
    * `beforeEye(camera, eyeIndex)` permite a la escena ajustar cosas por ojo.
    */
-  render(scene, camera, target = null, W = null, H = null) {
+  render(scene, camera, target = null, W = null, H = null, modeOverride = null) {
     const r = this.renderer;
     const size = r.getSize(new THREE.Vector2());
     const pr = r.getPixelRatio();
     const fullW = W ?? Math.round(size.x * pr);
     const fullH = H ?? Math.round(size.y * pr);
-    const { rL, rR, eyeW, eyeH, mode } = this.layout(fullW, fullH);
+    const { rL, rR, eyeW, eyeH, mode } = this.layout(fullW, fullH, modeOverride);
 
     if (this.rtL.width !== eyeW || this.rtL.height !== eyeH) {
       this.rtL.setSize(eyeW, eyeH); this.rtR.setSize(eyeW, eyeH);

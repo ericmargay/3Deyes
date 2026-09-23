@@ -92,7 +92,7 @@ const wallRT = new THREE.WebGLRenderTarget(1920, 1080, { minFilter: THREE.Linear
 const shaderToy = new ShaderToy(renderer);
 const pattern = new PatternScene();
 const depthLook = new DepthLook(params);
-const fakeApp = { renderer, params };
+const fakeApp = { renderer, params, emit: () => {} };
 const appScenes = { room: new RoomScene(fakeApp), fluid: new FluidScene(fakeApp), blob: new BlobScene(fakeApp), track: new TrackScene(fakeApp) };
 
 let shaderSrc = localStorage.getItem('3deyes.shader') || PRESETS.ripple;

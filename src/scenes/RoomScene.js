@@ -44,8 +44,8 @@ export class RoomScene extends BaseScene {
     s.fog = new THREE.Fog(0x1a1035, 25, 60);
 
     // luces
-    s.add(new THREE.HemisphereLight(0xfff0f8, 0x6a4a9a, 1.6));
-    this.sun = new THREE.DirectionalLight(0xfff4e6, 2.6);
+    const hemi = new THREE.HemisphereLight(0xfff0f8, 0x6a4a9a, 1.6); hemi.name = 'luz ambiente'; s.add(hemi);
+    this.sun = new THREE.DirectionalLight(0xfff4e6, 2.6); this.sun.name = 'sol';
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     const sc = this.sun.shadow.camera; sc.left = -14; sc.right = 14; sc.top = 14; sc.bottom = -14; sc.near = 1; sc.far = 60;
@@ -60,21 +60,20 @@ export class RoomScene extends BaseScene {
       new THREE.MeshStandardMaterial({ color: 0xf2cdb0, roughness: 0.95 }),
     ];
     this.wallBase = this.wallMats.map((m) => m.color.clone());
-    const mk = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.receiveShadow = true; m.castShadow = true; s.add(m); return m; };
-    mk(new THREE.BoxGeometry(W, T, W), this.wallMats[2], 0, -T / 2, 0);                 // piso
-    mk(new THREE.BoxGeometry(W, H, T), this.wallMats[0], 0, H / 2, -W / 2 - T / 2);      // pared fondo
-    mk(new THREE.BoxGeometry(T, H, W + T), this.wallMats[1], -W / 2 - T / 2, H / 2, -T / 2); // pared izquierda
-    // estante
-    mk(new THREE.BoxGeometry(0.3, 0.15, 4), new THREE.MeshStandardMaterial({ color: 0xf7d6e0 }), -W / 2 + 0.15, 4.5, -2);
-    // tablero decorativo en el piso (alfombra)
-    const rug = mk(new THREE.BoxGeometry(5, 0.05, 4), new THREE.MeshStandardMaterial({ color: 0x2bb5b8, roughness: 1 }), 1, 0.025, 1);
+    const mk = (name, geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.name = name; m.position.set(x, y, z); m.receiveShadow = true; m.castShadow = true; s.add(m); return m; };
+    mk('piso', new THREE.BoxGeometry(W, T, W), this.wallMats[2], 0, -T / 2, 0);
+    mk('pared fondo', new THREE.BoxGeometry(W, H, T), this.wallMats[0], 0, H / 2, -W / 2 - T / 2);
+    mk('pared izquierda', new THREE.BoxGeometry(T, H, W + T), this.wallMats[1], -W / 2 - T / 2, H / 2, -T / 2);
+    mk('estante', new THREE.BoxGeometry(0.3, 0.15, 4), new THREE.MeshStandardMaterial({ color: 0xf7d6e0 }), -W / 2 + 0.15, 4.5, -2);
+    const rug = mk('alfombra', new THREE.BoxGeometry(5, 0.05, 4), new THREE.MeshStandardMaterial({ color: 0x2bb5b8, roughness: 1 }), 1, 0.025, 1);
     rug.castShadow = false;
 
     // objetos estáticos decorativos flotando (como las figuras del estante)
-    const deco = new THREE.Group(); s.add(deco); this.deco = deco;
+    const deco = new THREE.Group(); deco.name = 'decoración'; s.add(deco); this.deco = deco;
     const decoGeos = [new THREE.TorusKnotGeometry(0.5, 0.16, 120, 16), new THREE.IcosahedronGeometry(0.7, 0), new THREE.TorusGeometry(0.6, 0.2, 16, 48), new THREE.OctahedronGeometry(0.7)];
     decoGeos.forEach((g, i) => {
       const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: PALETTE[i % PALETTE.length], roughness: 0.5, metalness: 0.1 }));
+      m.name = ['nudo', 'icosaedro', 'toro', 'octaedro'][i];
       m.position.set(-3.5 + i * 2.3, 5.5, -3.5 + (i % 2) * 1.5);
       m.castShadow = true; m.receiveShadow = true;
       m.userData.spin = 0.4 + i * 0.3;
@@ -107,7 +106,7 @@ export class RoomScene extends BaseScene {
     ];
     this.materials = PALETTE.map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6, metalness: 0.05 }));
     this.materialBase = this.materials.map((m) => m.color.clone());
-    this.dyn = new THREE.Group(); s.add(this.dyn);
+    this.dyn = new THREE.Group(); this.dyn.name = 'objetos que caen'; s.add(this.dyn);
 
     for (let i = 0; i < 25; i++) this.spawn(2 + Math.random() * 10);
 
