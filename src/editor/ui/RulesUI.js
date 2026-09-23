@@ -2,7 +2,7 @@ import { TRIGGER_TYPES, ACTION_TYPES, describeRule } from '../Rules.js';
 import { EASE_NAMES } from '../Timeline.js';
 
 const ON_LABELS = { click: 'clic en objeto', key: 'tecla', input: 'control físico (MIDI / OSC / serial / audio)', beat: 'beat del audio', gate: 'portal atravesado (track)', hit: 'objeto activado (track)', enter: 'al entrar a la escena', paramAbove: 'parámetro supera un valor' };
-const DO_LABELS = { set: 'fijar parámetro', tween: 'llevar parámetro a un valor', toggle: 'alternar booleano', trigger: 'disparar trigger', scene: 'ir a escena', nextScene: 'siguiente escena', play: 'reproducir línea de tiempo', pause: 'pausar', stop: 'detener', seek: 'ir a un tiempo' };
+const DO_LABELS = { set: 'fijar parámetro', tween: 'llevar parámetro a un valor', toggle: 'alternar booleano', trigger: 'disparar trigger', objSet: 'objeto: fijar propiedad', objTween: 'objeto: animar propiedad', objToggle: 'objeto: alternar visible', scene: 'ir a escena', nextScene: 'siguiente escena', play: 'reproducir línea de tiempo', pause: 'pausar', stop: 'detener', seek: 'ir a un tiempo' };
 
 const sel = (opts, value, attrs = '') => `<select ${attrs}>${opts.map((o) => `<option value="${o.value ?? o}"${(o.value ?? o) === value ? ' selected' : ''}>${o.label ?? o}</option>`).join('')}</select>`;
 
@@ -16,6 +16,11 @@ export function actionEditor(el, action, onChange, ctx) {
     if (['set', 'tween'].includes(a.type)) f += `<div class="row"><span class="lbl">parámetro</span>${sel(byType(['number', 'boolean', 'option']), a.id, 'data-f="id"')}</div><div class="row"><span class="lbl">valor</span><input type="text" data-f="value" value="${a.value ?? ''}"></div>`;
     if (a.type === 'tween') f += `<div class="row"><span class="lbl">duración (s)</span><input type="number" step="0.1" data-f="duration" value="${a.duration ?? 1}"></div><div class="row"><span class="lbl">curva</span>${sel(EASE_NAMES, a.ease ?? 'smooth', 'data-f="ease"')}</div>`;
     if (a.type === 'toggle') f += `<div class="row"><span class="lbl">parámetro</span>${sel(byType(['boolean']), a.id, 'data-f="id"')}</div>`;
+    if (['objSet', 'objTween', 'objToggle'].includes(a.type)) {
+      f += `<div class="row"><span class="lbl">objeto (ruta)</span><input type="text" data-f="path" value="${a.path ?? ''}" placeholder="decoración/nudo"><button data-pick="1" title="elegir en el viewport">⌖</button></div>`;
+      if (a.type !== 'objToggle') f += `<div class="row"><span class="lbl">propiedad</span>${sel(['position.x', 'position.y', 'position.z', 'rotation.x', 'rotation.y', 'rotation.z', 'scale.x', 'scale.y', 'scale.z', 'material.opacity', 'material.emissiveIntensity', 'material.roughness', 'material.metalness', 'intensity', 'visible'], a.prop ?? 'position.y', 'data-f="prop"')}</div><div class="row"><span class="lbl">valor</span><input type="text" data-f="value" value="${a.value ?? ''}"></div>`;
+      if (a.type === 'objTween') f += `<div class="row"><span class="lbl">duración (s)</span><input type="number" step="0.1" data-f="duration" value="${a.duration ?? 1}"></div><div class="row"><span class="lbl">curva</span>${sel(EASE_NAMES, a.ease ?? 'smooth', 'data-f="ease"')}</div>`;
+    }
     if (a.type === 'trigger') f += `<div class="row"><span class="lbl">trigger</span>${sel(byType(['trigger']), a.id, 'data-f="id"')}</div>`;
     if (a.type === 'scene') f += `<div class="row"><span class="lbl">escena</span>${sel(ctx.sceneKeys, a.value, 'data-f="value"')}</div>`;
     if (a.type === 'seek') f += `<div class="row"><span class="lbl">tiempo (s)</span><input type="number" step="0.1" data-f="value" value="${a.value ?? 0}"></div><div class="row"><span class="lbl">y reproducir</span><input type="checkbox" data-f="play" ${a.play ? 'checked' : ''}></div>`;
@@ -29,6 +34,8 @@ export function actionEditor(el, action, onChange, ctx) {
         onChange({ ...a }); render();
       };
     }
+    const pick = el.querySelector('[data-pick]'); if (pick) pick.onclick = () => { pick.textContent = '…'; ctx.capture?.click((p) => { a.path = p; onChange({ ...a }); render(); }); };
+    const propSel = el.querySelector('[data-f=prop]'); if (propSel && !a.prop) { a.prop = propSel.value; onChange({ ...a }); }
     // asegurar id por defecto
     const first = el.querySelector('[data-f=id]'); if (first && !a.id) { a.id = first.value; onChange({ ...a }); }
   };

@@ -133,11 +133,49 @@ el proyecto en cuanto se guarda.
 - *Conexiones*: tabla fuente → parámetro con mapeo (min, max, invertir,
   suavizado) y learn.
 
+- *+ agregar*: primitivas (cubo, esfera, cilindro, toro, cono, pirámide,
+  icosaedro, dodecaedro, nudo, plano, cápsula), luces (puntual, direccional,
+  foco, ambiente) y texto. Se guardan en el proyecto y aparecen en la app.
+- *Material*: tipo (Standard, Physical, Basic, Toon, Lambert), color, emisivo,
+  rugosidad, metal, barniz, transmisión, opacidad, wireframe, facetado, lados,
+  textura desde imagen (se guarda en el proyecto, máx. 1024 px) y sombras.
+- *Escena* (sin selección): fondo, niebla, exposición, bloom, profundidad y
+  los parámetros estéreo principales.
+- *Eventos* por objeto: "+ al hacer clic" crea una regla para ese objeto.
+  Las reglas también pueden fijar, animar o alternar propiedades de objetos.
+- Deshacer / rehacer (Ctrl+Z / Ctrl+Shift+Z), duplicar, borrar objetos
+  agregados, encuadrar toda la escena (Inicio).
+
 **Presets**: guardan los parámetros de la escena con un nombre. **Exportar /
 importar** mueven el proyecto como JSON. Todo se persiste en el navegador.
 
 El modelo vive en `src/editor/Project.js`; `Timeline.js` y `Rules.js` son los
 motores que corren tanto en el editor como en la app.
+
+## Teléfono + visor VR
+
+Al abrir la app en un teléfono aparece un aviso: "Entrar al modo visor" pone
+el modo estéreo `vr`, oculta la interfaz, pide pantalla completa y giroscopio,
+y parte la pantalla en dos imágenes centradas bajo las lentes del visor
+(Cardboard, Gear VR usado como montura, etc.). Parámetros en `stereo.vr*`:
+separación de lentes (mm), ancho físico de la pantalla (mm; 154 para el iPhone
+15 Pro Max en horizontal), fov, tamaño de imagen y distorsión k1/k2 que
+compensa las lentes. El giroscopio mueve la mirada en Track; "recentrar"
+vuelve a tomar el frente. iOS no permite pantalla completa desde Safari:
+agregar la página a la pantalla de inicio la abre sin barras.
+
+## Estereoscopio para el mural
+
+`http://localhost:5173/visor.html`: diseño de construcción de un periscopio de
+espejos (Wheatstone / Schilling) que lleva cada ojo directo al centro de su
+imagen, para quien no logra fusionar a ojo desnudo. Con el mural medido y la
+distancia del público calcula la desviación por ojo, el ángulo de los espejos
+externos (45° menos la mitad de la desviación), los tamaños de espejo según el
+campo visual, la alternativa en anteojos prismáticos (dioptrías prismáticas por
+ojo, base interna para cross o externa para parallel), un plano en planta a
+escala, la lista de piezas y los pasos de armado sobre un visor VR sin lentes.
+Espejos de primera superficie obligatorios: los comunes producen una imagen
+fantasma que arruina el estéreo.
 
 ## Control externo
 

@@ -118,7 +118,7 @@ const gui = new Gui(params, {
   'aplicar estéreo y escenas a la app': () => { params.mergeInto('3deyes.params', ['stereo', 'room', 'fluid', 'blob', 'track', 'look']); flash('aplicado a la app'); },
   'usar eyeSep máximo': () => { const { a } = recompute(); params.set('stereo.eyeSep', Math.floor(a.disparity.eyeSepMax * 1000) / 1000); },
   'editor de shader (E)': () => toggleEditor(),
-  'abrir la app': () => window.open('/', '_blank'),
+  'abrir la app': () => window.open('./', '_blank'),
   'MIDI (Ableton)': () => midi.connect(),
   'serial (ESP32)': () => serial.connect(),
   'WebSocket / OSC': () => socket.connect(),

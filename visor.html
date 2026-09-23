@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3Deyes · estereoscopio</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; background: #0b0a12; color: #ddd; font: 13px/1.55 ui-monospace, Menlo, Consolas, monospace; }
+    main { max-width: 1180px; margin: 0 auto; padding: 20px; display: grid; grid-template-columns: 340px 1fr; gap: 20px; }
+    h1 { grid-column: 1 / -1; font-size: 18px; color: #ff4fa3; margin: 0; }
+    h2 { font-size: 12px; color: #4fd1c5; text-transform: uppercase; letter-spacing: .08em; margin: 16px 0 6px; }
+    .panel { background: #141419; border: 1px solid #26262e; border-radius: 8px; padding: 12px 14px; }
+    label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 4px 0; }
+    input, select { width: 110px; background: #1b1b21; color: #fff; border: 1px solid #333; border-radius: 4px; padding: 3px 6px; font: inherit; }
+    .out { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; }
+    .out b { color: #fff; text-align: right; white-space: nowrap; font-weight: 600; }
+    .note { color: #999; font-size: 12px; }
+    .warn { color: #ffd166; } .ok { color: #3ddc84; } .bad { color: #ff4f6d; }
+    svg { width: 100%; height: auto; background: #0e0e14; border-radius: 8px; border: 1px solid #26262e; }
+    table { width: 100%; border-collapse: collapse; } td, th { padding: 4px 6px; border-bottom: 1px solid #26262e; text-align: left; font-weight: normal; } th { color: #999; }
+    ol, ul { padding-left: 18px; } li { margin: 4px 0; }
+    button { font: inherit; background: #1b1b21; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
+    @media print { body { background: #fff; color: #000; } .panel { border-color: #ccc; background: #fff; } svg { background: #fff; } .noprint { display: none; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Estereoscopio para el mural · diseño de construcción</h1>
+  <div class="panel">
+    <h2>Mural y público</h2>
+    <label><span>ancho proyección (m)</span><input id="screenW" type="number" step="0.1" value="6"></label>
+    <label><span>separación de centros S (m)</span><input id="sep" type="number" step="0.01" value="3.06"></label>
+    <label><span>ancho de cada imagen (m)</span><input id="imgW" type="number" step="0.01" value="2.65"></label>
+    <label><span>distancia del público D (m)</span><input id="D" type="number" step="0.5" value="15"></label>
+    <label><span>interocular IPD (mm)</span><input id="ipd" type="number" step="0.5" value="65"></label>
+    <label><span>contenido en pantalla</span><select id="content"><option value="parallel">parallel (izq → izq)</option><option value="cross">cross (cruzado)</option></select></label>
+    <h2>Periscopio de espejos</h2>
+    <label><span>ojo → espejo interno a (mm)</span><input id="a" type="number" step="1" value="30"></label>
+    <label><span>brazo m, interno → externo (mm)</span><input id="m" type="number" step="5" value="120"></label>
+    <label><span>margen de campo visual (×)</span><input id="margin" type="number" step="0.1" value="1.6"></label>
+    <label><span>campo visual mínimo (°)</span><input id="minFov" type="number" step="1" value="18"></label>
+    <div class="noprint" style="margin-top:10px"><button id="fromCalib">usar calibración guardada</button> <button onclick="window.print()">imprimir plano</button> <a href="./"><button>app</button></a></div>
+    <h2>Resultado</h2>
+    <div class="out" id="out"></div>
+    <div id="verdict" style="margin-top:8px"></div>
+  </div>
+  <div>
+    <div class="panel"><h2 style="margin-top:0">Plano en planta (vista desde arriba, a escala)</h2><div id="plan"></div></div>
+    <div class="panel" style="margin-top:14px"><h2 style="margin-top:0">Lista de piezas</h2><table id="parts"></table></div>
+    <div class="panel" style="margin-top:14px" id="howto"></div>
+  </div>
+</main>
+<script type="module" src="/src/visor.js"></script>
+</body>
+</html>

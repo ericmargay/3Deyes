@@ -11,7 +11,8 @@ import { RoomScene } from './scenes/RoomScene.js';
 import { FluidScene } from './scenes/FluidScene.js';
 import { BlobScene } from './scenes/BlobScene.js';
 import { TrackScene } from './scenes/TrackScene.js';
-import { Project, nameObjects, applyOverrides, captureOverride, pathOf } from './editor/Project.js';
+import { Project, applySceneProject, captureOverride, applyOverride, pathOf, findByPath, createAdded, PRIMITIVES, LIGHTS } from './editor/Project.js';
+import { describeRule } from './editor/Rules.js';
 import { TimelinePlayer } from './editor/Timeline.js';
 import { RuleEngine } from './editor/Rules.js';
 import { Viewport } from './editor/ui/Viewport.js';
@@ -48,7 +49,7 @@ const project = Project.load();
 const log = (m) => { console.log('[editor]', m); status(m); };
 const audio = new AudioInput(params, log);
 const midi = new MidiInput(params, log), serial = new SerialInput(params, log), socket = new SocketInput(params, log);
-const rules = new RuleEngine(params, { setScene: (k) => setScene(k), nextScene: () => setScene(SCENE_KEYS[(SCENE_KEYS.indexOf(current.key) + 1) % SCENE_KEYS.length]), timeline: null, log: (m) => status(m) });
+const rules = new RuleEngine(params, { setScene: (k) => setScene(k), nextScene: () => setScene(SCENE_KEYS[(SCENE_KEYS.indexOf(current.key) + 1) % SCENE_KEYS.length]), timeline: null, log: (m) => status(m), getRoot: () => current?.scene });
 const timeline = new TimelinePlayer(params, { getRoot: () => current?.scene, runAction: (a) => rules.run(a), onChange: () => tick() });
 rules.ctx.timeline = timeline;
 const fakeApp = { renderer, params, audio, emit: (type, detail) => rules.handle(type, detail) };
@@ -63,12 +64,12 @@ const gui = new Gui(params, {
 }, openGroups, '3Deyes', $('guiHost'));
 midi.connect().catch(() => {});
 
-const editorCtx = { paramOptions: () => [...params.defs.values()].map((d) => ({ value: d.id, label: d.id, type: d.type })), sceneKeys: SCENE_KEYS };
 const capture = {
   input: (cb) => { const h = (e) => { if (!e.detail.moved) return; params.removeEventListener('input', h); cb(e.detail.sourceKey); }; params.addEventListener('input', h); },
   key: (cb) => { const h = (e) => { window.removeEventListener('keydown', h, true); e.preventDefault(); cb(e.key); }; window.addEventListener('keydown', h, true); },
   click: (cb) => { nextSelectCb = cb; status('elegí un objeto en el viewport'); },
 };
+const editorCtx = { paramOptions: () => [...params.defs.values()].map((d) => ({ value: d.id, label: d.id, type: d.type })), sceneKeys: SCENE_KEYS, capture };
 
 const viewport = new Viewport(center, renderer, {
   onSelect: (obj) => select(obj),
@@ -77,11 +78,19 @@ const viewport = new Viewport(center, renderer, {
 });
 const outliner = new Outliner($('tree'), { onSelect: (o) => select(o), onVisible: (o) => saveOverride(o) });
 const inspector = new Inspector($('inspector'), {
-  timeline, project, root: () => current?.scene, onOverride: (o) => saveOverride(o),
+  timeline, project, params, root: () => current?.scene, onOverride: (o) => saveOverride(o),
   onKeysChanged: () => { saveProject(); timelineUI.refresh(); },
   recording: () => recording, focus: (o) => viewport.frame(o),
-  resetOverride: (o) => { if (current) { delete project.scene(current.key).overrides[pathOf(o, current.scene)]; saveProject(); } },
+  resetOverride: (o) => { if (!current) return; const path = pathOf(o, current.scene); const orig = originals.get(path); delete project.scene(current.key).overrides[path]; if (orig) applyOverride(o, orig, project.data.assets); saveProject(); },
   actionEditor: (el, a, cb) => actionEditor(el, a, cb, editorCtx),
+  settings: () => project.scene(current.key).settings,
+  applySettings: () => { applySceneProject(current.scene, project.scene(current.key), project.data.assets); saveProject(); },
+  rulesFor: (path) => project.scene(current.key).rules.filter((r) => r.on?.type === 'click' && r.on.path === path).map(describeRule),
+  addClickRule: (path) => { project.scene(current.key).rules.push({ id: Math.random().toString(36).slice(2, 8), enabled: true, on: { type: 'click', path }, do: { type: 'objTween', path, prop: 'scale.y', value: 2, duration: 0.6, ease: 'smooth' } }); saveProject(); rules.load(project.scene(current.key).rules); rulesUI.setRules(); showTab('rules'); },
+  setMaterialType: (o, type) => { const ov = project.scene(current.key).overrides[pathOf(o, current.scene)] || captureOverride(o); ov.material = { ...(ov.material || {}), type }; project.scene(current.key).overrides[pathOf(o, current.scene)] = ov; applyOverride(o, ov, project.data.assets); saveOverride(o); },
+  pickTexture: (o) => pickTexture(o),
+  duplicate: (o) => duplicate(o),
+  removeAdded: (o) => { const ps = project.scene(current.key); ps.added = ps.added.filter((d) => d.id !== o.userData.added); delete ps.overrides[pathOf(o, current.scene)]; o.parent?.remove(o); select(null); outliner.build(); saveProject(); },
 });
 const timelineUI = new TimelineUI({
   tracks: $('tlTracks'), canvas: $('tlCanvas'), wrap: $('tlCanvasWrap'), time: $('tTime'), play: $('tPlay'), start: $('tStart'), stop: $('tStop'),
@@ -118,10 +127,76 @@ $('camSel').onchange = () => { camMode = $('camSel').value; viewport.enabled = c
 $('save').onclick = () => { saveProject(); params.save('3deyes.params'); status('guardado ✓'); };
 $('export').onclick = () => project.export();
 $('import').onclick = async () => { const p = await Project.importFile(); if (p) { Object.assign(project.data, p.data); saveProject(); setScene(current.key, true); status('proyecto importado'); } };
-$('openApp').onclick = () => { saveProject(); params.save('3deyes.params'); window.open(`/?scene.current=${current.key}`, '_blank'); };
+$('openApp').onclick = () => { saveProject(); params.save('3deyes.params'); window.open(`./?scene.current=${current.key}`, '_blank'); };
 $('presetSave').onclick = () => { const name = prompt('nombre del preset'); if (!name) return; const ps = project.scene(current.key); const values = {}; for (const id of params.ids(current.key)) if (params.def(id).type !== 'trigger') values[id] = params.get(id); ps.presets[name] = { params: values }; saveProject(); refreshPresets(); };
 $('presetSel').onchange = () => { const ps = project.scene(current.key).presets[$('presetSel').value]; if (!ps) return; for (const [id, v] of Object.entries(ps.params)) params.set(id, v, 'preset'); };
 $('gT').onclick = () => gizmoMode('translate'); $('gR').onclick = () => gizmoMode('rotate'); $('gS').onclick = () => gizmoMode('scale'); $('gF').onclick = () => viewport.frame(selected);
+$('gAll').onclick = () => viewport.frameAll(current.scene);
+// menú agregar
+const addMenu = $('addMenu');
+addMenu.innerHTML = '<div class="h">primitivas</div>' + Object.keys(PRIMITIVES).map((k) => `<button data-add="mesh" data-type="${k}">${k}</button>`).join('') + '<div class="h">luces</div>' + Object.keys(LIGHTS).map((k) => `<button data-add="light" data-type="${k}">${k}</button>`).join('') + '<div class="h">otros</div><button data-add="text" data-type="texto">texto…</button>';
+$('addBtn').onclick = (e) => { e.stopPropagation(); addMenu.classList.toggle('open'); };
+document.addEventListener('click', () => addMenu.classList.remove('open'));
+for (const b of addMenu.querySelectorAll('[data-add]')) b.onclick = () => addObject(b.dataset.add, b.dataset.type);
+function addObject(kind, type) {
+  const ps = project.scene(current.key);
+  const n = ps.added.length + 1;
+  const desc = { id: `a${Date.now().toString(36)}`, kind, type, name: `${type} ${n}` };
+  if (kind === 'text') { const t = prompt('texto'); if (!t) return; desc.text = t; desc.name = `texto: ${t.slice(0, 12)}`; }
+  const target = viewport.controls.target.clone(); desc.position = target.toArray();
+  ps.added.push(desc);
+  const obj = createAdded(desc); current.scene.add(obj);
+  saveProject(); outliner.build(); select(obj);
+}
+function duplicate(o) {
+  const ps = project.scene(current.key);
+  if (o.userData.added) {
+    const src = ps.added.find((d) => d.id === o.userData.added); if (!src) return;
+    const desc = { ...src, id: `a${Date.now().toString(36)}`, name: `${src.name} copia`, position: o.position.clone().add(new THREE.Vector3(1, 0, 0)).toArray() };
+    ps.added.push(desc); const obj = createAdded(desc); current.scene.add(obj);
+    const ov = captureOverride(o); ov.position = desc.position; ps.overrides[pathOf(obj, current.scene)] = ov; applyOverride(obj, ov, project.data.assets);
+    saveProject(); outliner.build(); select(obj);
+  } else if (o.isMesh) {
+    const desc = { id: `a${Date.now().toString(36)}`, kind: 'mesh', type: 'cubo', name: `${o.name} copia`, position: o.position.clone().add(new THREE.Vector3(1, 0, 0)).toArray() };
+    ps.added.push(desc); const obj = createAdded(desc); obj.geometry = o.geometry; obj.material = o.material.clone(); obj.scale.copy(o.scale); obj.rotation.copy(o.rotation); (o.parent || current.scene).add(obj);
+    saveProject(); outliner.build(); select(obj); status('copia creada (geometría de plantilla: no persiste la forma)');
+  }
+}
+async function pickTexture(o) {
+  return new Promise((resolve) => {
+    const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*';
+    input.onchange = () => {
+      const f = input.files[0]; if (!f) return resolve();
+      const img = new Image(); img.onload = () => {
+        const max = 1024, k = Math.min(1, max / Math.max(img.width, img.height));
+        const cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        const id = `t${Date.now().toString(36)}`; project.data.assets[id] = cv.toDataURL('image/jpeg', 0.85);
+        const path = pathOf(o, current.scene); const ps = project.scene(current.key);
+        const ov = ps.overrides[path] || captureOverride(o); ov.material = { ...(ov.material || {}), map: id }; ps.overrides[path] = ov;
+        applyOverride(o, ov, project.data.assets); saveProject(); resolve();
+      };
+      img.src = URL.createObjectURL(f);
+    };
+    input.click();
+  });
+}
+// deshacer / rehacer sobre el proyecto de la escena
+const history = [], future = []; let lastSnap = null;
+const originals = new Map();  // ruta -> estado original antes del primer cambio
+function snapshot() { const s = JSON.stringify(project.scene(current.key)); if (s !== lastSnap) { if (lastSnap) { history.push(lastSnap); if (history.length > 60) history.shift(); future.length = 0; } lastSnap = s; } }
+function restore(json) {
+  const ps = project.scene(current.key);
+  const prev = Object.keys(ps.overrides);
+  Object.assign(ps, JSON.parse(json));
+  for (const path of prev) if (!ps.overrides[path] && originals.has(path)) applyOverride(findByPath(current.scene, path), originals.get(path), project.data.assets);
+  applySceneProject(current.scene, ps, project.data.assets);
+  rules.load(ps.rules); timeline.clip = ps.timeline; timeline.apply();
+  outliner.build(); inspector.render(); rulesUI.setRules(); timelineUI.refresh();
+  lastSnap = json; project.save();
+}
+$('undo').onclick = () => { if (!history.length) return; future.push(lastSnap); restore(history.pop()); status('deshecho'); };
+$('redo').onclick = () => { if (!future.length) return; history.push(lastSnap); restore(future.pop()); status('rehecho'); };
 const gA = document.createElement('button'); gA.id = 'gA'; gA.className = 'on'; gA.textContent = 'animar'; gA.title = 'la escena sigue animando mientras editás'; gA.onclick = () => { animating = !animating; gA.classList.toggle('on', animating); }; $('vpTools').appendChild(gA);
 function gizmoMode(m) { viewport.setMode(m); for (const [id, mm] of [['gT', 'translate'], ['gR', 'rotate'], ['gS', 'scale']]) $(id).classList.toggle('on', mm === m); }
 function setMode(m) {
@@ -147,14 +222,16 @@ function setScene(key, force = false) {
   current.enter();
   params.set('scene.current', key, 'editor');
   sceneSel.value = key;
-  nameObjects(current.scene);
   const ps = project.scene(key);
-  applyOverrides(current.scene, ps.overrides);
+  applySceneProject(current.scene, ps, project.data.assets);
   rules.load(ps.rules);
   timeline.load(ps.timeline, false);
   current.update(0, 0);
   viewport.setRoot(current.scene);
-  if (first || force) viewport.matchCamera(current.camera);
+  const box = viewport.sceneBox(current.scene);
+  if (box.isEmpty() || box.getSize(new THREE.Vector3()).length() > 60 || (current.scene.fog?.density ?? 0) > 0.005) viewport.matchCamera(current.camera); else viewport.frameAll(current.scene);
+  history.length = 0; future.length = 0; lastSnap = JSON.stringify(ps); originals.clear();
+  void first;
   outliner.setRoot(current.scene);
   select(null);
   rulesUI.setRules();
@@ -173,7 +250,12 @@ function select(obj) {
 function saveOverride(obj) {
   if (!obj || !current) return;
   const path = pathOf(obj, current.scene); if (!path) return;
-  project.scene(current.key).overrides[path] = captureOverride(obj);
+  const ps = project.scene(current.key);
+  if (!ps.overrides[path] && !originals.has(path)) originals.set(path, captureOverride(obj));
+  const prevMat = ps.overrides[path]?.material;
+  const ov = captureOverride(obj);
+  if (prevMat?.map && !ov.material?.map) ov.material = { ...(ov.material || {}), map: prevMat.map };
+  ps.overrides[path] = ov;
   saveProject();
 }
 function keyTransform(obj) {
@@ -182,7 +264,7 @@ function keyTransform(obj) {
   saveProject(); timelineUI.refresh();
 }
 let saveTimer, paramsTimer;
-function saveProject() { clearTimeout(saveTimer); saveTimer = setTimeout(() => project.save(), 300); }
+function saveProject() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { project.save(); snapshot(); }, 300); }
 params.onChange((id, value, source) => {
   if (source === 'gui' && recording) { const d = params.def(id); if (d.type === 'number' || d.type === 'boolean') { timeline.setKey(`param:${id}`, value); timelineUI.refresh(); saveProject(); } }
   if (id === 'stereo.mode') $('stereoSel').value = value;
@@ -214,6 +296,9 @@ window.addEventListener('keydown', (e) => {
   if (k === ' ') { e.preventDefault(); timeline.toggle(); timelineUI.refresh(); }
   else if (k === 'w') gizmoMode('translate'); else if (k === 'e') gizmoMode('rotate'); else if (k === 'r') gizmoMode('scale');
   else if (k === 'f') viewport.frame(selected);
+  else if (k === 'home') viewport.frameAll(current.scene);
+  else if ((e.metaKey || e.ctrlKey) && k === 'z') { e.preventDefault(); (e.shiftKey ? $('redo') : $('undo')).click(); }
+  else if ((k === 'delete' || k === 'backspace') && selected?.userData.added) inspector.ctx.removeAdded(selected);
   else if (k === 'escape') select(null);
   else if (k === 'tab') { e.preventDefault(); setMode(mode === 'edit' ? 'play' : 'edit'); }
   else if (k === 'k' && selected) { for (const c of ['x', 'y', 'z']) timeline.setKey(`obj:${pathOf(selected, current.scene)}:position.${c}`, selected.position[c]); saveProject(); timelineUI.refresh(); }
@@ -254,7 +339,7 @@ renderer.setAnimationLoop(() => {
   viewport.update();
   if (mode === 'edit') { renderer.setRenderTarget(null); renderer.render(current.scene, cam); viewport.renderHelpers(editorCam); }
   else stereo.render(current.scene, cam);
-  pollT += dt; if (pollT > 1) { pollT = 0; outliner.poll(); }
+  pollT += dt; if (pollT > 1) { pollT = 0; current.scene.traverse((o) => { if (!o.name && o !== current.scene) o.name = `${o.type}.${o.parent.children.indexOf(o)}`; }); outliner.poll(); }
 });
 
 const q = new URLSearchParams(location.search);

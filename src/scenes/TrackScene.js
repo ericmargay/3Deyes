@@ -236,7 +236,9 @@ export class TrackScene extends BaseScene {
   }
 
   // ---------- eventos ----------
-  onPointerMove(x, y) { this.lookTarget.set(x, y); }
+  onPointerMove(x, y) { if (!this.gyroLook) this.lookTarget.set(x, y); }
+  /** yaw / pitch en grados (giroscopio del teléfono). */
+  onLook(yaw, pitch) { const r = Math.max(1, this.v('lookRange')); this.gyroLook = true; this.lookTarget.set(THREE.MathUtils.clamp(-yaw / r, -1, 1), THREE.MathUtils.clamp(pitch / (r * 0.6), -1, 1)); }
   onPointerDown() { this.activate(this.hover); }
 
   dir() { return this.v('reverse') ? -1 : 1; }

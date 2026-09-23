@@ -63,6 +63,13 @@
     #tlTracks .trow .mini { width: 18px; height: 16px; padding: 0; font-size: 10px; line-height: 14px; }
     #tlCanvasWrap { position: relative; overflow: hidden; }
     #tlCanvas { display: block; cursor: crosshair; }
+    .menu { position: relative; }
+    .dropdown { display: none; position: absolute; top: 28px; left: 0; z-index: 50; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px; min-width: 200px; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+    .dropdown.open { display: block; }
+    .dropdown .h { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; padding: 6px 8px 2px; }
+    .dropdown button { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 5px 8px; border-radius: 4px; }
+    .dropdown button:hover { background: #2a2a34; }
+    #vpTools .sep { width: 1px; height: 20px; background: var(--line); margin: 0 3px; }
     .lil-gui.root { --width: 100%; --font-size: 11px; --background-color: transparent; --title-background-color: #1b1b21; --widget-color: #26262e; --hover-color: #30303a; --focus-color: #3a3a46; --number-color: #4fd1c5; --string-color: #ffd166; }
     .lil-gui.root > .title { display: none; }
   </style>
@@ -74,6 +81,9 @@
     <label>plantilla <select id="sceneSel"></select></label>
     <label>preset <select id="presetSel"><option value="">—</option></select></label>
     <button id="presetSave" title="guarda los parámetros actuales como preset">＋ preset</button>
+    <span class="sep"></span>
+    <div class="menu"><button id="addBtn">＋ agregar</button><div class="dropdown" id="addMenu"></div></div>
+    <button id="undo" title="deshacer (Ctrl+Z)">↶</button><button id="redo" title="rehacer (Ctrl+Shift+Z)">↷</button>
     <span class="sep"></span>
     <button id="modeEdit" class="on">✎ editar</button><button id="modePlay">▶ reproducir</button>
     <label>cámara <select id="camSel"><option value="editor">editor</option><option value="escena">escena</option></select></label>
@@ -91,7 +101,7 @@
   </div>
 
   <div id="center">
-    <div id="vpTools"><button id="gT" class="on">mover</button><button id="gR">rotar</button><button id="gS">escalar</button><button id="gF">enfocar</button></div>
+    <div id="vpTools"><button id="gT" class="on">mover</button><button id="gR">rotar</button><button id="gS">escalar</button><span class="sep"></span><button id="gF" title="enfocar selección (F)">enfocar</button><button id="gAll" title="encuadrar toda la escena (Inicio)">encuadrar</button></div>
     <div id="hint"></div>
   </div>
 

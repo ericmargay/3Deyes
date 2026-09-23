@@ -19,9 +19,10 @@
  *   play / pause / stop / seek { value }  línea de tiempo
  */
 import { EASES } from './Timeline.js';
+import { findByPath, getProp, setProp } from './Project.js';
 
 export const TRIGGER_TYPES = ['click', 'key', 'input', 'beat', 'gate', 'hit', 'enter', 'paramAbove'];
-export const ACTION_TYPES = ['set', 'tween', 'toggle', 'trigger', 'scene', 'nextScene', 'play', 'pause', 'stop', 'seek'];
+export const ACTION_TYPES = ['set', 'tween', 'toggle', 'trigger', 'objSet', 'objTween', 'objToggle', 'scene', 'nextScene', 'play', 'pause', 'stop', 'seek'];
 
 export class RuleEngine {
   constructor(params, ctx = {}) {
@@ -76,6 +77,16 @@ export class RuleEngine {
         this.tweens.push({ id: a.id, from, to: Number(a.value), dur: Math.max(0.01, Number(a.duration) || 1), t: 0, ease: EASES[a.ease] || EASES.smooth });
         break;
       }
+      case 'objSet': { const o = findByPath(this.ctx.getRoot?.(), a.path); if (o) setProp(o, a.prop, this.parse(a.value)); break; }
+      case 'objToggle': { const o = findByPath(this.ctx.getRoot?.(), a.path); if (o) setProp(o, a.prop || 'visible', !getProp(o, a.prop || 'visible')); break; }
+      case 'objTween': {
+        const o = findByPath(this.ctx.getRoot?.(), a.path); if (!o) break;
+        const from = Number(getProp(o, a.prop)); if (Number.isNaN(from)) { setProp(o, a.prop, this.parse(a.value)); break; }
+        const key = `${a.path}:${a.prop}`;
+        this.tweens = this.tweens.filter((t) => t.key !== key);
+        this.tweens.push({ key, obj: o, prop: a.prop, from, to: Number(a.value), dur: Math.max(0.01, Number(a.duration) || 1), t: 0, ease: EASES[a.ease] || EASES.smooth });
+        break;
+      }
       case 'scene': this.ctx.setScene?.(a.value); break;
       case 'nextScene': this.ctx.nextScene?.(); break;
       case 'play': this.ctx.timeline?.play(); break;
@@ -86,6 +97,8 @@ export class RuleEngine {
     }
     this.log(`regla → ${a.type} ${a.id ?? a.value ?? ''}`, info);
   }
+
+  parse(v) { if (v === 'true') return true; if (v === 'false') return false; const n = Number(v); return Number.isNaN(n) ? v : n; }
 
   coerce(id, value) {
     const d = this.params.def(id);
@@ -99,7 +112,8 @@ export class RuleEngine {
     for (const tw of this.tweens) {
       tw.t = Math.min(tw.dur, tw.t + dt);
       const k = tw.ease(tw.t / tw.dur);
-      this.params.set(tw.id, tw.from + (tw.to - tw.from) * k, 'rule');
+      const v = tw.from + (tw.to - tw.from) * k;
+      if (tw.obj) setProp(tw.obj, tw.prop, v); else this.params.set(tw.id, v, 'rule');
     }
     this.tweens = this.tweens.filter((tw) => tw.t < tw.dur);
   }
@@ -108,6 +122,6 @@ export class RuleEngine {
 export function describeRule(r) {
   const on = r.on, a = r.do;
   const onTxt = { click: `clic en ${on.path || 'cualquier objeto'}`, key: `tecla "${on.key}"`, input: `${on.sourceKey} ≥ ${on.min ?? 0.5}`, beat: 'beat del audio', gate: 'portal atravesado', hit: 'objeto activado', enter: 'al entrar a la escena', paramAbove: `${on.id} ≥ ${on.value}` }[on.type] || on.type;
-  const doTxt = { set: `${a.id} = ${a.value}`, tween: `${a.id} → ${a.value} en ${a.duration}s`, toggle: `alternar ${a.id}`, trigger: `disparar ${a.id}`, scene: `escena ${a.value}`, nextScene: 'siguiente escena', play: 'reproducir', pause: 'pausar', stop: 'detener', seek: `ir a ${a.value}s` }[a.type] || a.type;
+  const doTxt = { set: `${a.id} = ${a.value}`, tween: `${a.id} → ${a.value} en ${a.duration}s`, objSet: `${a.path}.${a.prop} = ${a.value}`, objTween: `${a.path}.${a.prop} → ${a.value} en ${a.duration}s`, objToggle: `alternar ${a.path}.${a.prop || 'visible'}`, toggle: `alternar ${a.id}`, trigger: `disparar ${a.id}`, scene: `escena ${a.value}`, nextScene: 'siguiente escena', play: 'reproducir', pause: 'pausar', stop: 'detener', seek: `ir a ${a.value}s` }[a.type] || a.type;
   return `${onTxt}  ⟶  ${doTxt}`;
 }

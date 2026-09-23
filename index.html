@@ -21,7 +21,16 @@
       background: rgba(0,0,0,.55); padding: 8px 10px; border-radius: 6px; white-space: pre; opacity: .8;
     }
     #help.hidden { display: none; }
+    .hidden { display: none !important; }
     .lil-gui { --width: 300px; --font-size: 11px; }
+    #vrPrompt { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.82); padding: 20px; }
+    #vrPrompt .card { max-width: 420px; background: #14101f; border: 1px solid #ff4fa3; border-radius: 12px; padding: 18px 20px; font-size: 14px; line-height: 1.5; }
+    #vrPrompt h2 { margin: 0 0 8px; font-size: 16px; color: #ff4fa3; }
+    #vrPrompt button { font: inherit; padding: 10px 14px; border-radius: 8px; border: 1px solid #444; background: #1b1530; color: #fff; margin: 8px 8px 0 0; }
+    #vrPrompt button.primary { background: #ff4fa3; color: #000; border-color: #ff4fa3; font-weight: 600; }
+    #vrBar { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 25; display: flex; gap: 6px; opacity: .6; }
+    #vrBar button { font: inherit; font-size: 11px; padding: 6px 10px; border-radius: 6px; border: 1px solid #555; background: rgba(0,0,0,.6); color: #fff; }
+    #vrTip { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 25; font-size: 12px; background: rgba(0,0,0,.7); padding: 6px 10px; border-radius: 6px; }
     .cp-handle {
       position: fixed; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
       border: 2px solid #ff4fa3; background: rgba(255,79,163,.25); cursor: grab; z-index: 20; display: none;
@@ -29,6 +38,17 @@
   </style>
 </head>
 <body>
+  <div id="vrPrompt" class="hidden">
+    <div class="card">
+      <h2>Teléfono detectado</h2>
+      Esta obra se puede ver en 3D con un visor VR (Cardboard, Gear VR o similar): la pantalla se parte en dos imágenes, una bajo cada lente, y el giroscopio mueve la mirada.<br><br>
+      1. Girá el teléfono a horizontal.<br>2. Entrá al modo visor y aceptá el permiso de movimiento.<br>3. Colocá el teléfono en el visor.
+      <br>
+      <button id="vrEnter" class="primary">Entrar al modo visor</button><button id="vrSkip">Seguir en pantalla</button>
+    </div>
+  </div>
+  <div id="vrBar" class="hidden"><button id="vrRecenter">recentrar</button><button id="vrExit">salir del visor</button></div>
+  <div id="vrTip" class="hidden">Girá el teléfono a horizontal</div>
   <div id="hud"></div>
   <div id="help">[1-4] escena   [M] modo stereo   [S] swap ojos   [G] GUI   [H] ayuda   [P] corner-pin   [C] calibrar   [E] editor   [F] fullscreen   [R] reset</div>
   <script type="module" src="/src/main.js"></script>

@@ -1,6 +1,6 @@
 import { pathOf } from '../Project.js';
 
-const ICONS = { Mesh: '▣', Group: '▤', Scene: '◈', Points: '⁘', Line: '╱', LineSegments: '╱', LineLoop: '○', DirectionalLight: '☀', PointLight: '✦', HemisphereLight: '◐', AmbientLight: '◌', RectAreaLight: '▭', PerspectiveCamera: '🎥', Object3D: '·', InstancedMesh: '▣' };
+const ICONS = { SpotLight: '◭', Mesh: '▣', Group: '▤', Scene: '◈', Points: '⁘', Line: '╱', LineSegments: '╱', LineLoop: '○', DirectionalLight: '☀', PointLight: '✦', HemisphereLight: '◐', AmbientLight: '◌', RectAreaLight: '▭', PerspectiveCamera: '🎥', Object3D: '·', InstancedMesh: '▣' };
 const MAX_CHILDREN = 80;
 
 /** Árbol de objetos de la escena. */
@@ -32,7 +32,7 @@ export class Outliner {
       row.style.paddingLeft = `${6 + depth * 12}px`;
       row.dataset.path = path;
       const kids = obj.children.length;
-      const isCollapsed = this.collapsed.has(path) || (depth >= 2 && !this.collapsed.has('!' + path));
+      const isCollapsed = this.collapsed.has(path) || ((depth >= 2 || kids > 12) && !this.collapsed.has('!' + path));
       row.innerHTML = `<span class="caret">${kids ? (isCollapsed ? '▸' : '▾') : ''}</span><span class="icon">${ICONS[obj.type] || '·'}</span><span class="name" title="${path}">${obj.name || obj.type}${kids ? ` <span class="muted">(${kids})</span>` : ''}</span><span class="eye${obj.visible ? '' : ' off'}">${obj.visible ? '◉' : '◎'}</span>`;
       row.querySelector('.caret').onclick = (e) => { e.stopPropagation(); if (isCollapsed) { this.collapsed.delete(path); this.collapsed.add('!' + path); } else { this.collapsed.add(path); this.collapsed.delete('!' + path); } this.build(); };
       row.querySelector('.eye').onclick = (e) => { e.stopPropagation(); obj.visible = !obj.visible; this.onVisible?.(obj); this.build(); };

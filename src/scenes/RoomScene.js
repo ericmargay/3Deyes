@@ -120,6 +120,7 @@ export class RoomScene extends BaseScene {
     const size = this.v('size') * (0.6 + Math.random() * 0.8);
     const sh = this.shapes[Math.floor(Math.random() * this.shapes.length)];
     const mesh = new THREE.Mesh(sh.geo, this.materials[Math.floor(Math.random() * this.materials.length)]);
+    mesh.name = `cuerpo ${this.spawnCount = (this.spawnCount || 0) + 1}`;
     mesh.scale.setScalar(size);
     mesh.castShadow = true; mesh.receiveShadow = true;
     const body = new CANNON.Body({ mass: size * size * size, material: this.physMat, shape: sh.make(size), sleepSpeedLimit: 0.2 });

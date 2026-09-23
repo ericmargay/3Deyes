@@ -13,9 +13,10 @@ import { SocketInput } from '../control/Socket.js';
 import { AudioInput } from '../control/Audio.js';
 import { Gui } from '../control/Gui.js';
 import { analyze, fmtM, loadCalibration } from './StereoMath.js';
-import { Project, STORAGE_KEY, nameObjects, applyOverrides } from '../editor/Project.js';
+import { Project, STORAGE_KEY, applySceneProject } from '../editor/Project.js';
 import { TimelinePlayer } from '../editor/Timeline.js';
 import { RuleEngine } from '../editor/Rules.js';
+import { Gyro } from '../control/Gyro.js';
 
 const SCENES = [RoomScene, FluidScene, BlobScene, TrackScene];
 
@@ -45,7 +46,7 @@ export class App {
     // proyecto del editor: overrides de objetos, línea de tiempo y reglas por escena
     this.project = Project.load();
     this.timeline = new TimelinePlayer(p, { getRoot: () => this.current?.scene, runAction: (a) => this.rules.run(a) });
-    this.rules = new RuleEngine(p, { setScene: (n) => this.setScene(n), nextScene: () => this.nextScene(), timeline: this.timeline, log: (m) => this.log(m) });
+    this.rules = new RuleEngine(p, { setScene: (n) => this.setScene(n), nextScene: () => this.nextScene(), timeline: this.timeline, log: (m) => this.log(m), getRoot: () => this.current?.scene });
     window.addEventListener('storage', (e) => { if (e.key === STORAGE_KEY) { this.project = Project.load(); this.applyProject(); } });
 
     this.stereo = new StereoOutput(this.renderer, p);
@@ -71,8 +72,9 @@ export class App {
       'reset parámetros': () => p.reset(),
       'reset corner-pin': () => this.cornerPin.reset(),
       'fullscreen': () => this.toggleFullscreen(),
-      'calibración (C)': () => window.open('/calibrate.html', '_blank'),
-      'editor de escenas (E)': () => window.open('/editor.html', '_blank'),
+      'calibración (C)': () => window.open('calibrate.html', '_blank'),
+      'editor de escenas (E)': () => window.open('editor.html', '_blank'),
+      'diseño del estereoscopio': () => window.open('visor.html', '_blank'),
     });
     this.calib = loadCalibration();
     window.addEventListener('focus', () => { this.calib = loadCalibration(); });
@@ -90,6 +92,8 @@ export class App {
       if (source !== 'restore') this.scheduleSave();
     });
 
+    this.gyro = new Gyro((yaw, pitch) => this.current?.onLook?.(yaw, pitch), (m) => this.log(m));
+    this.setupMobile();
     this.hud = document.getElementById('hud');
     this.help = document.getElementById('help');
     this.clock = new THREE.Clock();
@@ -144,9 +148,8 @@ export class App {
   /** Aplica al la escena actual lo que el editor guardó: overrides, reglas y línea de tiempo. */
   applyProject() {
     if (!this.current) return;
-    nameObjects(this.current.scene);
     const ps = this.project.scene(this.current.key);
-    applyOverrides(this.current.scene, ps.overrides);
+    applySceneProject(this.current.scene, ps, this.project.data.assets);
     this.rules.load(ps.rules);
     this.timeline.load(ps.timeline, true);
   }
@@ -178,7 +181,7 @@ export class App {
     if (e.target.tagName === 'INPUT') return;
     const k = e.key.toLowerCase();
     this.emit('key', { key: e.key });
-    if (k === 'e') { window.open('/editor.html', '_blank'); return; }
+    if (k === 'e') { window.open('editor.html', '_blank'); return; }
     if (k >= '1' && k <= '9') { const s = this.scenes[Number(k) - 1]; if (s) this.setScene(s.key); }
     else if (k === 'm') this.stereo.nextMode();
     else if (k === 's') this.params.set('stereo.swap', !this.params.get('stereo.swap'));
@@ -188,7 +191,7 @@ export class App {
     else if (k === 'f') this.toggleFullscreen();
     else if (k === 'r') this.params.reset(this.current.key);
     else if (k === 'd') this.params.set('look.depth', !this.params.get('look.depth'));
-    else if (k === 'c') window.open('/calibrate.html', '_blank');
+    else if (k === 'c') window.open('calibrate.html', '_blank');
     else if (k === ' ') this.nextScene();
     else if (k === 'arrowleft' || k === 'arrowright') {
       const d = this.params.def('stereo.eyeSep');
@@ -197,6 +200,41 @@ export class App {
       const d = this.params.def('stereo.focus');
       this.params.set('stereo.focus', d.value + (k === 'arrowup' ? 0.25 : -0.25) * (e.shiftKey ? 4 : 1));
     }
+  }
+
+  /** Teléfono detectado: ofrece el modo visor VR (pantalla partida bajo las lentes + giroscopio). */
+  setupMobile() {
+    const ua = navigator.userAgent;
+    this.isMobile = /iPhone|iPad|iPod|Android/i.test(ua) || (navigator.maxTouchPoints > 1 && Math.min(window.innerWidth, window.innerHeight) < 900);
+    const prompt = document.getElementById('vrPrompt');
+    if (!prompt) return;
+    if (!this.isMobile) { prompt.remove(); return; }
+    prompt.classList.remove('hidden');
+    document.getElementById('vrEnter').onclick = () => this.enterVr();
+    document.getElementById('vrSkip').onclick = () => { prompt.classList.add('hidden'); };
+    document.getElementById('vrExit').onclick = () => this.exitVr();
+    document.getElementById('vrRecenter').onclick = () => this.gyro.recenter();
+    const tip = () => document.getElementById('vrTip')?.classList.toggle('hidden', window.innerWidth > window.innerHeight);
+    window.addEventListener('resize', tip); tip();
+  }
+
+  async enterVr() {
+    document.getElementById('vrPrompt')?.classList.add('hidden');
+    this.params.set('stereo.mode', 'vr');
+    this.gui.gui.hide(); this.hud.classList.add('hidden'); this.help.classList.add('hidden');
+    document.getElementById('vrBar')?.classList.remove('hidden');
+    try { if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); } catch (_) { /* iOS no lo permite */ }
+    try { await screen.orientation?.lock?.('landscape'); } catch (_) { /* no soportado: el usuario gira el teléfono */ }
+    await this.gyro.enable();
+    this.vr = true;
+  }
+
+  exitVr() {
+    this.vr = false; this.gyro.disable();
+    document.getElementById('vrBar')?.classList.add('hidden');
+    this.hud.classList.remove('hidden'); this.gui.gui.show();
+    this.params.set('stereo.mode', 'mono');
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   }
 
   toggleFullscreen() {

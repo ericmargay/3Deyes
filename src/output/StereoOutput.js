@@ -21,7 +21,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
  *   stereo.eyeSep → separación interocular en unidades de escena (profundidad)
  *   stereo.focus  → distancia de convergencia (plano que queda "en la pared")
  */
-export const STEREO_MODES = ['mono', 'parallel', 'cross', 'overunder', 'anaglyph'];
+export const STEREO_MODES = ['mono', 'parallel', 'cross', 'overunder', 'anaglyph', 'vr'];
 
 const compositeVert = /* glsl */ `
   varying vec2 vUv;
@@ -42,6 +42,19 @@ const compositeFrag = /* glsl */ `
   uniform mat3 colorMatrixLeft;
   uniform mat3 colorMatrixRight;
   uniform int anaglyphStyle; // 0 Dubois, 1 color simple, 2 gris
+  uniform vec2 vrK;          // distorsión radial (k1, k2) para las lentes del visor; 0 = sin distorsión
+  uniform float rectAspect;  // aspecto físico del rectángulo de cada ojo
+
+  // pre-distorsión barril: compensa el efecto cojín de las lentes
+  bool distort(inout vec2 local) {
+    if (vrK.x == 0.0 && vrK.y == 0.0) return true;
+    vec2 c = (local - 0.5) * 2.0;
+    vec2 cp = vec2(c.x * rectAspect, c.y);
+    float r2 = dot(cp, cp);
+    float f = 1.0 + vrK.x * r2 + vrK.y * r2 * r2;
+    local = 0.5 + c * f * 0.5;
+    return all(greaterThanEqual(local, vec2(0.0))) && all(lessThan(local, vec2(1.0)));
+  }
 
   bool inRect(vec2 uv, vec4 r, out vec2 local) {
     local = (uv - r.xy) / r.zw;
@@ -75,8 +88,8 @@ const compositeFrag = /* glsl */ `
         }
       }
     } else {
-      if (inRect(uv, rectL, lu)) col = texture2D(mapL, lu).rgb;
-      if (mode == 1 && inRect(uv, rectR, ru)) col = texture2D(mapR, ru).rgb;
+      if (inRect(uv, rectL, lu) && distort(lu)) col = texture2D(mapL, lu).rgb;
+      if (mode == 1 && inRect(uv, rectR, ru) && distort(ru)) col = texture2D(mapR, ru).rgb;
       if (fusionDots > 0.5) {
         float d = dot2(uv, rectL);
         if (mode == 1) d = max(d, dot2(uv, rectR));
@@ -88,6 +101,18 @@ const compositeFrag = /* glsl */ `
     #include <colorspace_fragment>
   }
 `;
+
+/**
+ * Disposición para un visor de teléfono (tipo Cardboard / Gear VR): cada imagen
+ * centrada bajo su lente. lensSep y screenW en mm; aspect = ancho/alto del canvas.
+ */
+export function computeVrLayout(lensSep, screenW, imageScale, aspect) {
+  const half = Math.min(0.49, (lensSep / screenW) / 2);
+  const w = Math.min(imageScale * 0.5, half * 2 * 0.98, (1 - 2 * half));
+  const h = Math.min(1, w * aspect);
+  const y = (1 - h) / 2;
+  return { rL: { x: 0.5 - half - w / 2, y, w, h }, rR: { x: 0.5 + half - w / 2, y, w, h } };
+}
 
 export class StereoOutput {
   constructor(renderer, params) {
@@ -112,6 +137,8 @@ export class StereoOutput {
         fusionDots: { value: 0 },
         aspect: { value: 1 },
         anaglyphStyle: { value: 0 },
+        vrK: { value: new THREE.Vector2(0, 0) },
+        rectAspect: { value: 1 },
         colorMatrixLeft: { value: new THREE.Matrix3().fromArray([
           0.456100, -0.0400822, -0.0152161,
           0.500484, -0.0378246, -0.0205971,
@@ -158,6 +185,12 @@ export class StereoOutput {
     p.define('stereo.fusionDots', { default: true, label: 'puntos de fusión' });
     p.define('stereo.anaglyphStyle', { type: 'option', options: ['dubois', 'color', 'gray'], default: 'dubois', label: 'estilo anaglifo' });
     p.define('stereo.bg', { type: 'number', min: 0, max: 1, default: 0.0, step: 0.001, label: 'fondo (gris)' });
+    p.define('stereo.vrLensSep', { min: 50, max: 75, default: 63, step: 0.5, label: 'VR: separación lentes (mm)' });
+    p.define('stereo.vrScreenW', { min: 100, max: 220, default: 154, step: 0.5, label: 'VR: ancho pantalla (mm)' });
+    p.define('stereo.vrFov', { min: 50, max: 120, default: 90, step: 0.5, label: 'VR: fov' });
+    p.define('stereo.vrImageScale', { min: 0.4, max: 1, default: 0.9, step: 0.01, label: 'VR: tamaño imagen' });
+    p.define('stereo.vrK1', { min: 0, max: 1, default: 0.22, step: 0.005, label: 'VR: distorsión k1' });
+    p.define('stereo.vrK2', { min: 0, max: 0.6, default: 0.24, step: 0.005, label: 'VR: distorsión k2' });
     p.define('look.bloom', { min: 0, max: 3, default: 0.8, step: 0.01, label: 'bloom (neón)' });
     p.define('look.bloomThreshold', { min: 0, max: 1.5, default: 0.9, step: 0.01, label: 'bloom umbral' });
     p.define('look.bloomRadius', { min: 0, max: 1, default: 0.5, step: 0.01, label: 'bloom radio' });
@@ -172,7 +205,10 @@ export class StereoOutput {
   /** Calcula rectángulos (en 0..1) y tamaño de textura por ojo. */
   layout(W, H, modeOverride = null) {
     const mode = modeOverride || this.params.get('stereo.mode');
-    const { rL: l, rR: r } = computeLayout(mode, this.params.get('stereo.scale'), this.params.get('stereo.gap'));
+    const p = this.params;
+    const { rL: l, rR: r } = mode === 'vr'
+      ? computeVrLayout(p.get('stereo.vrLensSep'), p.get('stereo.vrScreenW'), p.get('stereo.vrImageScale'), W / H)
+      : computeLayout(mode, p.get('stereo.scale'), p.get('stereo.gap'));
     const rL = new THREE.Vector4(l.x, l.y, l.w, l.h), rR = new THREE.Vector4(r.x, r.y, r.w, r.h);
     return { rL, rR, eyeW: Math.max(2, Math.round(W * l.w)), eyeH: Math.max(2, Math.round(H * l.h)), mode };
   }
@@ -195,6 +231,7 @@ export class StereoOutput {
 
     // cámara por ojo
     camera.aspect = eyeW / eyeH;
+    if (mode === 'vr') camera.fov = this.params.get('stereo.vrFov');
     camera.focus = this.params.get('stereo.focus');
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
@@ -202,6 +239,8 @@ export class StereoOutput {
     this.stereo.update(camera);
 
     const swap = this.params.get('stereo.swap') !== (mode === 'cross');
+    const u0 = this.material.uniforms;
+    if (mode === 'vr') { u0.vrK.value.set(this.params.get('stereo.vrK1'), this.params.get('stereo.vrK2')); u0.rectAspect.value = (rL.z * fullW) / (rL.w * fullH); } else u0.vrK.value.set(0, 0);
     const camL = swap ? this.stereo.cameraR : this.stereo.cameraL;
     const camR = swap ? this.stereo.cameraL : this.stereo.cameraR;
 
@@ -217,7 +256,7 @@ export class StereoOutput {
     const u = this.material.uniforms;
     u.rectL.value.copy(rL); u.rectR.value.copy(rR);
     u.mode.value = mode === 'mono' ? 0 : mode === 'anaglyph' ? 2 : 1;
-    u.fusionDots.value = this.params.get('stereo.fusionDots') && mode !== 'anaglyph' && mode !== 'mono' ? 1 : 0;
+    u.fusionDots.value = this.params.get('stereo.fusionDots') && mode !== 'anaglyph' && mode !== 'mono' && mode !== 'vr' ? 1 : 0;
     u.aspect.value = fullW / fullH;
     u.anaglyphStyle.value = ['dubois', 'color', 'gray'].indexOf(this.params.get('stereo.anaglyphStyle'));
     const g = this.params.get('stereo.bg'); u.bg.value.setRGB(g, g, g);
