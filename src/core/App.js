@@ -92,10 +92,10 @@ export class App {
       if (source !== 'restore') this.scheduleSave();
     });
 
-    this.gyro = new Gyro((yaw, pitch) => this.current?.onLook?.(yaw, pitch), (m) => this.log(m));
-    this.setupMobile();
     this.hud = document.getElementById('hud');
     this.help = document.getElementById('help');
+    this.gyro = new Gyro((yaw, pitch) => this.current?.onLook?.(yaw, pitch), (m) => this.log(m));
+    this.setupMobile();
     this.clock = new THREE.Clock();
     this.time = 0;
     this.fps = 0; this.frames = 0; this.fpsT = 0;
