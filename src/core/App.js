@@ -205,11 +205,21 @@ export class App {
   /** Teléfono detectado: ofrece el modo visor VR (pantalla partida bajo las lentes + giroscopio). */
   setupMobile() {
     const ua = navigator.userAgent;
-    this.isMobile = /iPhone|iPad|iPod|Android/i.test(ua) || (navigator.maxTouchPoints > 1 && Math.min(window.innerWidth, window.innerHeight) < 900);
+    this.kiosk = new URLSearchParams(location.search).get('vr') === '1';
+    this.isMobile = this.kiosk || /iPhone|iPad|iPod|Android/i.test(ua) || (navigator.maxTouchPoints > 1 && Math.min(window.innerWidth, window.innerHeight) < 900);
     const prompt = document.getElementById('vrPrompt');
     if (!prompt) return;
     if (!this.isMobile) { prompt.remove(); return; }
     prompt.classList.remove('hidden');
+    this.setupTouch();
+    if (this.kiosk) {
+      // app iOS: sin GUI ni HUD; el toque inicial habilita giroscopio y audio
+      this.gui.gui.hide(); this.hud.classList.add('hidden'); this.help.classList.add('hidden');
+      prompt.querySelector('.card').innerHTML = '<h2>3Deyes · visor</h2>Colocá el teléfono en horizontal y tocá para iniciar. Después ponelo en el visor.<br><button id="vrEnter" class="primary" style="width:100%;margin-top:12px">Tocar para iniciar</button>';
+      document.getElementById('vrEnter').onclick = () => this.enterVr();
+      document.getElementById('vrBar')?.remove();
+      return;
+    }
     document.getElementById('vrEnter').onclick = () => this.enterVr();
     document.getElementById('vrSkip').onclick = () => { prompt.classList.add('hidden'); };
     document.getElementById('vrExit').onclick = () => this.exitVr();
@@ -218,11 +228,28 @@ export class App {
     window.addEventListener('resize', tip); tip();
   }
 
+  /** Gestos táctiles en modo visor: pellizco = zoom (tamaño de imagen, igual para ambos ojos). */
+  setupTouch() {
+    const el = this.renderer.domElement;
+    const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    let d0 = null, s0 = 1;
+    el.addEventListener('touchstart', (e) => { if (e.touches.length === 2) { d0 = dist(e.touches); s0 = this.params.get('stereo.vrImageScale'); } }, { passive: true });
+    el.addEventListener('touchmove', (e) => {
+      if (e.touches.length !== 2 || !d0) return;
+      e.preventDefault();
+      if (this.params.get('stereo.mode') === 'vr') this.setZoom(s0 * (dist(e.touches) / d0));
+    }, { passive: false });
+    el.addEventListener('touchend', () => { d0 = null; });
+  }
+
+  /** Zoom del visor: 0.4 … 1 (fracción de la mitad de pantalla que ocupa cada ojo). Lo usa la app iOS. */
+  setZoom(v) { this.params.set('stereo.vrImageScale', Math.min(1, Math.max(0.4, v))); }
+
   async enterVr() {
     document.getElementById('vrPrompt')?.classList.add('hidden');
     this.params.set('stereo.mode', 'vr');
     this.gui.gui.hide(); this.hud.classList.add('hidden'); this.help.classList.add('hidden');
-    document.getElementById('vrBar')?.classList.remove('hidden');
+    if (!this.kiosk) document.getElementById('vrBar')?.classList.remove('hidden');
     try { if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); } catch (_) { /* iOS no lo permite */ }
     try { await screen.orientation?.lock?.('landscape'); } catch (_) { /* no soportado: el usuario gira el teléfono */ }
     await this.gyro.enable();
