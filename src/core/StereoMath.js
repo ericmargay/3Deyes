@@ -28,6 +28,9 @@ export function computeLayout(mode, scale, gap) {
     const halfH = 0.5 - g / 2, w = s, h = halfH * s, x = (1 - w) / 2;
     rL = { x, y: 0.5 + g / 2 + (halfH - h) / 2, w, h };
     rR = { x, y: (halfH - h) / 2, w, h };
+  } else if (mode === 'left' || mode === 'right' || mode === 'dual') {
+    rL = { x: 0, y: 0, w: 1, h: 1 };
+    rR = { ...rL };
   } else {
     const w = s, h = s;
     rL = { x: (1 - w) / 2, y: (1 - h) / 2, w, h };

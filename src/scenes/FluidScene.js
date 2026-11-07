@@ -80,6 +80,8 @@ const pointFrag = /* glsl */ `
 
 export class FluidScene extends BaseScene {
   static id = 'fluid';
+  static title = 'Fluido';
+  static category = 'Geometría y física';
   constructor(app) {
     super(app, 'fluid', 'Fluido');
     this.size = 256;

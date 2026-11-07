@@ -82,6 +82,7 @@ export class Params extends EventTarget {
       max: opts.max ?? 1,
       step: opts.step ?? 0,
       options: opts.options ?? null,
+      labels: opts.labels ?? null,
       default: opts.default ?? (opts.min ?? 0),
       value: opts.default ?? (opts.min ?? 0),
       onChange: opts.onChange ?? null,

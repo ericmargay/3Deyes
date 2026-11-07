@@ -101,6 +101,8 @@ const frag = /* glsl */ `
 
 export class BlobScene extends BaseScene {
   static id = 'blob';
+  static title = 'Metaballs';
+  static category = 'Geometría y física';
   constructor(app) { super(app, 'blob', 'Metaballs'); this.orbit = 0; this.handlesDepthLook = true; }
 
   defineParams() {

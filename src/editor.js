@@ -11,6 +11,9 @@ import { RoomScene } from './scenes/RoomScene.js';
 import { FluidScene } from './scenes/FluidScene.js';
 import { BlobScene } from './scenes/BlobScene.js';
 import { TrackScene } from './scenes/TrackScene.js';
+import { DiosasScene } from './scenes/DiosasScene.js';
+import { MUSIC_SCENES } from './scenes/music/index.js';
+import { MusicPlayer } from './music/Player.js';
 import { Project, applySceneProject, captureOverride, applyOverride, pathOf, findByPath, createAdded, PRIMITIVES, LIGHTS } from './editor/Project.js';
 import { describeRule } from './editor/Rules.js';
 import { TimelinePlayer } from './editor/Timeline.js';
@@ -28,7 +31,7 @@ import { RulesUI, ConnectionsUI, actionEditor } from './editor/ui/RulesUI.js';
  */
 const $ = (id) => document.getElementById(id);
 const params = new Params();
-const SCENE_CLASSES = { room: RoomScene, fluid: FluidScene, blob: BlobScene, track: TrackScene };
+const SCENE_CLASSES = { room: RoomScene, fluid: FluidScene, blob: BlobScene, track: TrackScene, diosas: DiosasScene, ...Object.fromEntries(MUSIC_SCENES.map((S) => [S.id, S])) };
 const SCENE_KEYS = Object.keys(SCENE_CLASSES);
 params.define('scene.current', { type: 'option', options: SCENE_KEYS, default: 'room', label: 'escena' });
 
@@ -52,7 +55,8 @@ const midi = new MidiInput(params, log), serial = new SerialInput(params, log), 
 const rules = new RuleEngine(params, { setScene: (k) => setScene(k), nextScene: () => setScene(SCENE_KEYS[(SCENE_KEYS.indexOf(current.key) + 1) % SCENE_KEYS.length]), timeline: null, log: (m) => status(m), getRoot: () => current?.scene });
 const timeline = new TimelinePlayer(params, { getRoot: () => current?.scene, runAction: (a) => rules.run(a), onChange: () => tick() });
 rules.ctx.timeline = timeline;
-const fakeApp = { renderer, params, audio, emit: (type, detail) => rules.handle(type, detail) };
+const fakeApp = { renderer, params, audio, midi, stereo, emit: (type, detail) => rules.handle(type, detail) };
+fakeApp.music = new MusicPlayer(params, log, fakeApp);
 const scenes = Object.fromEntries(SCENE_KEYS.map((k) => [k, new SCENE_CLASSES[k](fakeApp)]));
 let current = null, mode = 'edit', camMode = 'editor', recording = false, animating = true, selected = null, nextSelectCb = null;
 
@@ -117,7 +121,7 @@ function showTab(name) {
 
 // barra superior
 const sceneSel = $('sceneSel');
-sceneSel.innerHTML = SCENE_KEYS.map((k) => `<option value="${k}">${k}</option>`).join('');
+sceneSel.innerHTML = SCENE_KEYS.map((k) => `<option value="${k}">${SCENE_CLASSES[k].category ?? 'otras'} › ${SCENE_CLASSES[k].title ?? k}</option>`).join('');
 sceneSel.onchange = () => setScene(sceneSel.value);
 $('stereoSel').innerHTML = STEREO_MODES.map((m) => `<option>${m}</option>`).join('');
 $('stereoSel').value = params.get('stereo.mode');
@@ -229,7 +233,7 @@ function setScene(key, force = false) {
   current.update(0, 0);
   viewport.setRoot(current.scene);
   const box = viewport.sceneBox(current.scene);
-  if (box.isEmpty() || box.getSize(new THREE.Vector3()).length() > 60 || (current.scene.fog?.density ?? 0) > 0.005) viewport.matchCamera(current.camera); else viewport.frameAll(current.scene);
+  if (current.editorUsesSceneCamera || box.isEmpty() || box.getSize(new THREE.Vector3()).length() > 60 || (current.scene.fog?.density ?? 0) > 0.005) viewport.matchCamera(current.camera); else viewport.frameAll(current.scene);
   history.length = 0; future.length = 0; lastSnap = JSON.stringify(ps); originals.clear();
   void first;
   outliner.setRoot(current.scene);
@@ -328,6 +332,8 @@ $('hint').textContent = 'clic: seleccionar · W/E/R: mover/rotar/escalar · F: e
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
   audio.update(dt);
+  fakeApp.music.update(dt);
+  stereo.fx.tick(dt);
   if (audio.beat) rules.handle('beat', {});
   if (current && (mode === 'play' || animating)) { time += dt; current.update(dt, time); }
   timeline.update(dt);

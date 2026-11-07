@@ -40,14 +40,23 @@ export class Gui {
     return this.folders.get(group);
   }
 
+  /** ids con tres partes (diosas.mirada.modo) van a una subcarpeta del grupo. */
+  folderFor(id) {
+    const parts = id.split('.');
+    if (parts.length < 3) return this.folder(parts[0]);
+    const key = `${parts[0]}.${parts[1]}`;
+    if (!this.folders.has(key)) { const f = this.folder(parts[0]).addFolder(parts[1]); f.close(); this.folders.set(key, f); }
+    return this.folders.get(key);
+  }
+
   addController(d) {
     if (this.controllers.has(d.id)) { this.controllers.get(d.id).destroy(); }
-    const f = this.folder(d.group);
+    const f = this.folderFor(d.id);
     let c;
     const setter = (v) => this.params.set(d.id, v, 'gui');
     if (d.type === 'number') c = f.add({ v: d.value }, 'v', d.min, d.max, d.step || (d.max - d.min) / 1000).onChange(setter);
     else if (d.type === 'boolean') c = f.add({ v: d.value }, 'v').onChange(setter);
-    else if (d.type === 'option') c = f.add({ v: d.value }, 'v', d.options).onChange(setter);
+    else if (d.type === 'option') c = f.add({ v: d.value }, 'v', d.labels ? Object.fromEntries(d.options.map((o, i) => [d.labels[i] ?? o, o])) : d.options).onChange(setter);
     else if (d.type === 'trigger') c = f.add({ v: () => this.params.set(d.id, 1, 'gui') }, 'v');
     else return;
     c.name(d.label);
@@ -79,7 +88,7 @@ export class Gui {
     if (!f) return;
     for (const id of [...this.controllers.keys()]) if (id.startsWith(group + '.')) this.controllers.delete(id);
     f.destroy();
-    this.folders.delete(group);
+    for (const k of [...this.folders.keys()]) if (k === group || k.startsWith(group + '.')) this.folders.delete(k);
   }
 
   toggle() { this.gui.show(this.gui._hidden); }

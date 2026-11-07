@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { computeLayout } from '../core/StereoMath.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { FxPass } from './FxPass.js';
 
 /**
  * Salida estéreo.
@@ -13,6 +14,13 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
  *   cross     → lado a lado, ojos intercambiados (visión cruzada / bizca)
  *   overunder → arriba / abajo
  *   anaglyph  → rojo-cian (matrices de Dubois), para lentes
+ *   left      → solo el ojo izquierdo, a cuadro completo
+ *   right     → solo el ojo derecho (left / right: una salida por proyector,
+ *               p. ej. estéreo pasivo con filtros polarizados)
+ *
+ * Con dos proyectores en la misma computadora conviene renderDual(): un solo
+ * render alimenta dos ventanas (ver DualOutput.js), así los ojos nunca se
+ * desincronizan.
  *
  * Parámetros importantes para proyección sobre murales:
  *   stereo.scale  → tamaño de cada imagen dentro de su mitad (imágenes más
@@ -21,7 +29,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
  *   stereo.eyeSep → separación interocular en unidades de escena (profundidad)
  *   stereo.focus  → distancia de convergencia (plano que queda "en la pared")
  */
-export const STEREO_MODES = ['mono', 'parallel', 'cross', 'overunder', 'anaglyph', 'vr'];
+export const STEREO_MODES = ['mono', 'parallel', 'cross', 'overunder', 'anaglyph', 'vr', 'left', 'right'];
 
 const compositeVert = /* glsl */ `
   varying vec2 vUv;
@@ -161,10 +169,16 @@ export class StereoOutput {
     // bloom (luces neón): se aplica sobre cada ojo antes de componer
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 1, 0.4, 0.9);
     this.bloomW = 0; this.bloomH = 0;
+    this.fx = new FxPass(renderer, params);
+    this.time = 0;
     this.defineParams();
   }
 
-  applyBloom(rt) {
+  applyBloom(rt, eye = 0) {
+    this.applyBloomOnly(rt);
+    this.fx.apply(rt, eye, this.time);
+  }
+  applyBloomOnly(rt) {
     const strength = this.params.get('look.bloom');
     if (strength <= 0) return;
     if (this.bloomW !== rt.width || this.bloomH !== rt.height) { this.bloom.setSize(rt.width, rt.height); this.bloomW = rt.width; this.bloomH = rt.height; }
@@ -215,7 +229,6 @@ export class StereoOutput {
 
   /**
    * Renderiza scene con camera hacia `target` (WebGLRenderTarget o null = pantalla).
-   * `beforeEye(camera, eyeIndex)` permite a la escena ajustar cosas por ojo.
    */
   render(scene, camera, target = null, W = null, H = null, modeOverride = null) {
     const r = this.renderer;
@@ -224,46 +237,99 @@ export class StereoOutput {
     const fullW = W ?? Math.round(size.x * pr);
     const fullH = H ?? Math.round(size.y * pr);
     const { rL, rR, eyeW, eyeH, mode } = this.layout(fullW, fullH, modeOverride);
+    const which = mode === 'left' ? 'L' : mode === 'right' ? 'R' : 'both';
+    this.renderEyes(scene, camera, eyeW, eyeH, mode, which);
+    if (mode === 'vr') { this.material.uniforms.vrK.value.set(this.params.get('stereo.vrK1'), this.params.get('stereo.vrK2')); this.material.uniforms.rectAspect.value = (rL.z * fullW) / (rL.w * fullH); } else this.material.uniforms.vrK.value.set(0, 0);
+    this.composite(target, mode, rL, rR, fullW, fullH);
+  }
 
-    if (this.rtL.width !== eyeW || this.rtL.height !== eyeH) {
-      this.rtL.setSize(eyeW, eyeH); this.rtR.setSize(eyeW, eyeH);
-    }
-
-    // cámara por ojo
+  /** Renderiza los ojos (rtL / rtR) a eyeW × eyeH. which: 'L' | 'R' | 'both'. */
+  renderEyes(scene, camera, eyeW, eyeH, mode, which = 'both') {
+    const r = this.renderer;
+    if (this.rtL.width !== eyeW || this.rtL.height !== eyeH) { this.rtL.setSize(eyeW, eyeH); this.rtR.setSize(eyeW, eyeH); }
     camera.aspect = eyeW / eyeH;
+    // encuadre: una escena pensada para 16:9 en un ojo angosto (lado a lado) abre el campo para no perder los costados
+    const ud = camera.userData;
+    if (mode !== 'vr' && ud.baseFov && ud.designAspect) {
+      const a = camera.aspect, D = ud.designAspect;
+      camera.fov = a < D ? THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(ud.baseFov) / 2) * D / a)) : ud.baseFov;
+    }
     if (mode === 'vr') camera.fov = this.params.get('stereo.vrFov');
     camera.focus = this.params.get('stereo.focus');
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
     this.stereo.eyeSep = this.params.get('stereo.eyeSep');
     this.stereo.update(camera);
-
     const swap = this.params.get('stereo.swap') !== (mode === 'cross');
-    const u0 = this.material.uniforms;
-    if (mode === 'vr') { u0.vrK.value.set(this.params.get('stereo.vrK1'), this.params.get('stereo.vrK2')); u0.rectAspect.value = (rL.z * fullW) / (rL.w * fullH); } else u0.vrK.value.set(0, 0);
     const camL = swap ? this.stereo.cameraR : this.stereo.cameraL;
     const camR = swap ? this.stereo.cameraL : this.stereo.cameraR;
-
     const prevTarget = r.getRenderTarget();
     if (mode === 'mono') {
       r.setRenderTarget(this.rtL); r.clear(); r.render(scene, camera); this.applyBloom(this.rtL);
     } else {
-      r.setRenderTarget(this.rtL); r.clear(); r.render(scene, camL); this.applyBloom(this.rtL);
-      r.setRenderTarget(this.rtR); r.clear(); r.render(scene, camR); this.applyBloom(this.rtR);
+      if (which !== 'R') { r.setRenderTarget(this.rtL); r.clear(); r.render(scene, camL); this.applyBloom(this.rtL, 0); }
+      if (which !== 'L') { r.setRenderTarget(this.rtR); r.clear(); r.render(scene, camR); this.applyBloom(this.rtR, 1); }
     }
+    r.setRenderTarget(prevTarget);
+  }
 
-    // composición
+  /**
+   * Compone los ojos ya renderizados. viewport = [x, y, w, h] en píxeles del
+   * buffer (origen abajo a la izquierda) para dibujar solo en una parte del canvas.
+   */
+  composite(target, mode, rL, rR, fullW, fullH, viewport = null) {
+    const r = this.renderer;
     const u = this.material.uniforms;
+    u.mapL.value = mode === 'right' ? this.rtR.texture : this.rtL.texture;
+    u.mapR.value = this.rtR.texture;
     u.rectL.value.copy(rL); u.rectR.value.copy(rR);
-    u.mode.value = mode === 'mono' ? 0 : mode === 'anaglyph' ? 2 : 1;
-    u.fusionDots.value = this.params.get('stereo.fusionDots') && mode !== 'anaglyph' && mode !== 'mono' && mode !== 'vr' ? 1 : 0;
+    const single = mode === 'mono' || mode === 'left' || mode === 'right';
+    u.mode.value = single ? 0 : mode === 'anaglyph' ? 2 : 1;
+    u.fusionDots.value = this.params.get('stereo.fusionDots') && !single && mode !== 'anaglyph' && mode !== 'vr' && mode !== 'dual' ? 1 : 0;
     u.aspect.value = fullW / fullH;
     u.anaglyphStyle.value = ['dubois', 'color', 'gray'].indexOf(this.params.get('stereo.anaglyphStyle'));
     const g = this.params.get('stereo.bg'); u.bg.value.setRGB(g, g, g);
-
+    const prevTarget = r.getRenderTarget();
     r.setRenderTarget(target);
+    if (viewport) { const pr = r.getPixelRatio(); r.setViewport(viewport[0] / pr, viewport[1] / pr, viewport[2] / pr, viewport[3] / pr); }
     r.render(this.quadScene, this.quadCam);
+    if (viewport) { const sz = r.getSize(new THREE.Vector2()); r.setViewport(0, 0, sz.x, sz.y); }
     r.setRenderTarget(prevTarget);
+  }
+
+  /**
+   * Dos proyectores: renderiza ambos ojos a la resolución de las salidas, copia
+   * cada ojo a su ventana (outputs = DualOutput) y deja en este canvas la vista
+   * previa (lado a lado, anaglifo, solo izquierdo o nada).
+   */
+  renderDual(scene, camera, outputs, preview = 'lado a lado') {
+    const r = this.renderer, canvas = r.domElement;
+    const { w, h } = outputs.size();
+    this.renderEyes(scene, camera, w, h, 'dual', 'both');
+    this.material.uniforms.vrK.value.set(0, 0);
+    const cw = canvas.width, ch = canvas.height;
+    const k = Math.min(1, cw / w, ch / h), vw = Math.max(2, Math.floor(w * k)), vh = Math.max(2, Math.floor(h * k));
+    const full = new THREE.Vector4(0, 0, 1, 1);
+    for (const o of outputs.list) {
+      if (!outputs.isOpen(o)) continue;
+      this.composite(null, o.eye === 'L' ? 'left' : 'right', full, full, vw, vh, [0, 0, vw, vh]);
+      outputs.copy(o, canvas, ch - vh, vw, vh);
+    }
+    // vista previa con la proporción de las salidas
+    const a = w / h;
+    if (preview === 'lado a lado') {
+      let ew = 0.48, eh = (ew * cw) / a / ch;
+      if (eh > 0.96) { eh = 0.96; ew = (eh * ch * a) / cw; }
+      const y = (1 - eh) / 2;
+      this.composite(null, 'parallel', new THREE.Vector4(0.25 - ew / 2, y, ew, eh), new THREE.Vector4(0.75 - ew / 2, y, ew, eh), cw, ch);
+    } else if (preview === 'nada') {
+      r.setRenderTarget(null); r.setClearColor(0x000000); r.clear();
+    } else {
+      let ew = 1, eh = cw / a / ch;
+      if (eh > 1) { eh = 1; ew = (ch * a) / cw; }
+      const rect = new THREE.Vector4((1 - ew) / 2, (1 - eh) / 2, ew, eh);
+      this.composite(null, preview === 'anaglifo' ? 'anaglyph' : 'left', rect, rect, cw, ch);
+    }
   }
 
   dispose() { this.rtL.dispose(); this.rtR.dispose(); this.material.dispose(); }

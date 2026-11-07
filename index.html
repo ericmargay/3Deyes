@@ -31,6 +31,19 @@
     #vrBar { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 25; display: flex; gap: 6px; opacity: .6; }
     #vrBar button { font: inherit; font-size: 11px; padding: 6px 10px; border-radius: 6px; border: 1px solid #555; background: rgba(0,0,0,.6); color: #fff; }
     #vrTip { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 25; font-size: 12px; background: rgba(0,0,0,.7); padding: 6px 10px; border-radius: 6px; }
+    #musica { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 12; width: min(860px, 92vw); background: rgba(8,6,14,.78); border: 1px solid #3a2a4a; border-radius: 10px; padding: 8px 12px; font-size: 12px; backdrop-filter: blur(6px); }
+    #musica.hidden { display: none; }
+    #musica .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0; }
+    #musica button { font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 6px; border: 1px solid #4a3a5a; background: #1b1530; color: #eee; cursor: pointer; }
+    #musica button:hover { border-color: #ff4fa3; }
+    #musica button.pulse { animation: pulse 1s infinite; border-color: #ff4fa3; }
+    @keyframes pulse { 50% { background: #ff4fa3; color: #000; } }
+    #musica input { font: inherit; font-size: 12px; padding: 5px 8px; border-radius: 6px; border: 1px solid #4a3a5a; background: #0e0b18; color: #eee; flex: 1; min-width: 160px; }
+    #muPlay { width: 38px; }
+    #muName { flex: 1; color: #ff9ad1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #muBar { width: 100%; height: 28px; display: block; border-radius: 5px; background: #110d1a; cursor: pointer; }
+    #muStatus, #muTime, #muBpm { color: #aaa; }
+    #muClose { position: absolute; right: 8px; top: 6px; padding: 2px 7px; }
     .cp-handle {
       position: fixed; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
       border: 2px solid #ff4fa3; background: rgba(255,79,163,.25); cursor: grab; z-index: 20; display: none;
@@ -50,7 +63,25 @@
   <div id="vrBar" class="hidden"><button id="vrRecenter">recentrar</button><button id="vrExit">salir del visor</button></div>
   <div id="vrTip" class="hidden">Girá el teléfono a horizontal</div>
   <div id="hud"></div>
-  <div id="help">[1-4] escena   [M] modo stereo   [S] swap ojos   [G] GUI   [H] ayuda   [P] corner-pin   [C] calibrar   [E] editor   [F] fullscreen   [R] reset</div>
+  <div id="musica" class="hidden">
+    <button id="muClose" title="ocultar (A)">×</button>
+    <div class="row">
+      <button id="muFile">♫ archivo</button>
+      <button id="muTab" title="audio de otra pestaña de Chrome (YouTube, YouTube Music, Spotify web…)">pestaña</button>
+      <button id="muMic" title="micrófono o entrada de línea (Ableton por BlackHole)">mic / línea</button>
+      <input id="muYt" placeholder="link de YouTube / YouTube Music…">
+      <button id="muYtGo">abrir</button>
+    </div>
+    <div class="row">
+      <button id="muPlay">▶</button>
+      <span id="muName"></span>
+      <span id="muTime"></span>
+      <span id="muBpm"></span>
+    </div>
+    <canvas id="muBar"></canvas>
+    <div id="muStatus">arrastrá un archivo de música a la ventana · espacio / K: play · J / L: ±5 s · V: director · X: efectos al azar</div>
+  </div>
+  <div id="help">[1-9] [ ] escena   [M] modo stereo   [S] swap ojos   [O] dos proyectores   [A] música   [Z] pad Kaoss   [G] GUI   [H] ayuda   [P] corner-pin   [C] calibrar   [E] editor   [F] fullscreen   [R] reset</div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

@@ -2,23 +2,31 @@ import * as THREE from 'three';
 import { Params } from './Params.js';
 import { StereoOutput, STEREO_MODES } from '../output/StereoOutput.js';
 import { CornerPin } from '../output/CornerPin.js';
+import { DualOutput } from '../output/DualOutput.js';
 import { DepthLook } from '../scenes/BaseScene.js';
 import { RoomScene } from '../scenes/RoomScene.js';
 import { FluidScene } from '../scenes/FluidScene.js';
 import { BlobScene } from '../scenes/BlobScene.js';
 import { TrackScene } from '../scenes/TrackScene.js';
+import { DiosasScene } from '../scenes/DiosasScene.js';
 import { MidiInput } from '../control/Midi.js';
 import { SerialInput } from '../control/Serial.js';
 import { SocketInput } from '../control/Socket.js';
 import { AudioInput } from '../control/Audio.js';
+import { CameraInput } from '../control/Camera.js';
 import { Gui } from '../control/Gui.js';
 import { analyze, fmtM, loadCalibration } from './StereoMath.js';
 import { Project, STORAGE_KEY, applySceneProject } from '../editor/Project.js';
 import { TimelinePlayer } from '../editor/Timeline.js';
 import { RuleEngine } from '../editor/Rules.js';
 import { Gyro } from '../control/Gyro.js';
+import { MusicPlayer } from '../music/Player.js';
+import { MusicPanel } from '../music/Panel.js';
+import { MUSIC_SCENES } from '../scenes/music/index.js';
+import { KaossPad } from '../control/KaossPad.js';
+import { KaossEngine } from '../stage/Kaoss.js';
 
-const SCENES = [RoomScene, FluidScene, BlobScene, TrackScene];
+const SCENES = [RoomScene, FluidScene, BlobScene, TrackScene, DiosasScene, ...MUSIC_SCENES];
 
 export class App {
   constructor() {
@@ -37,11 +45,12 @@ export class App {
 
     // parámetros globales
     const p = this.params;
-    p.define('scene.current', { type: 'option', options: SCENES.map((S) => S.id), default: SCENES[0].id, label: 'escena' });
+    p.define('scene.current', { type: 'option', options: SCENES.map((S) => S.id), labels: SCENES.map((S) => `${S.category ?? 'otras'} › ${S.title ?? S.id}`), default: SCENES[0].id, label: 'escena' });
     p.define('scene.next', { type: 'trigger', label: 'siguiente escena' });
     p.define('look.exposure', { min: 0.1, max: 3, default: 1, step: 0.01, label: 'exposición' });
     p.define('look.pixelRatio', { min: 0.25, max: 2, default: Math.min(window.devicePixelRatio, 2), step: 0.05, label: 'resolución (pixel ratio)' });
     p.define('look.timeScale', { min: 0, max: 3, default: 1, step: 0.01, label: 'velocidad del tiempo' });
+    p.define('look.tonemapping', { type: 'option', options: ['aces', 'neutral', 'filmic', 'ninguno'], default: 'aces', label: 'mapeo tonal' });
 
     // proyecto del editor: overrides de objetos, línea de tiempo y reglas por escena
     this.project = Project.load();
@@ -50,6 +59,7 @@ export class App {
     window.addEventListener('storage', (e) => { if (e.key === STORAGE_KEY) { this.project = Project.load(); this.applyProject(); } });
 
     this.stereo = new StereoOutput(this.renderer, p);
+    this.dual = new DualOutput(p, (m) => this.log(m), () => this.resize());
     this.cornerPin = new CornerPin(this.renderer);
     this.depthLook = new DepthLook(p);
 
@@ -62,6 +72,10 @@ export class App {
     this.serial = new SerialInput(p, log);
     this.socket = new SocketInput(p, log);
     this.audio = new AudioInput(p, log);
+    this.camIn = new CameraInput(p, log);
+    this.music = new MusicPlayer(p, log, this);
+    this.kaoss = new KaossPad(p, log);
+    this.kaossLights = new KaossEngine(p);   // luces estilo Kaoss: las usan la escena Kaoss y el rig (Art-Net)
 
     this.gui = new Gui(p, {
       'MIDI (Ableton)': () => this.midi.connect(),
@@ -69,6 +83,12 @@ export class App {
       'WebSocket / OSC': () => this.socket.connect(),
       'audio (mic / loopback)': () => this.audio.connect(),
       'audio: archivo de música': () => this.audio.pickFile(),
+      'cámara (sensor de presencia)': () => this.camIn.connect(),
+      'música: panel (A)': () => this.panel.toggle(),
+      'música: cargar archivo…': () => this.music.pickFile(),
+      'pad Kaoss (Z)': () => this.kaoss.toggle(),
+      'pad Kaoss en otra ventana': () => this.kaoss.openWindow(),
+      'dos proyectores: salidas L / R (O)': () => this.dual.toggle(),
       'reset parámetros': () => p.reset(),
       'reset corner-pin': () => this.cornerPin.reset(),
       'fullscreen': () => this.toggleFullscreen(),
@@ -93,6 +113,7 @@ export class App {
     });
 
     this.hud = document.getElementById('hud');
+    this.panel = new MusicPanel(this.music, p, log);
     this.help = document.getElementById('help');
     this.gyro = new Gyro((yaw, pitch) => this.current?.onLook?.(yaw, pitch), (m) => this.log(m));
     this.setupMobile();
@@ -104,7 +125,9 @@ export class App {
     window.addEventListener('keydown', (e) => this.onKey(e));
     // puntero → escena actual (mirar alrededor, activar objetos)
     const norm = (e) => [(e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1];
-    this.renderer.domElement.addEventListener('pointermove', (e) => { const [x, y] = norm(e); this.current?.onPointerMove?.(x, y); });
+    this.renderer.domElement.addEventListener('pointermove', (e) => { const [x, y] = norm(e); this.current?.onPointerMove?.(x, y, e.buttons); });
+    this.renderer.domElement.addEventListener('pointerup', (e) => { const [x, y] = norm(e); this.current?.onPointerUp?.(x, y); });
+    this.renderer.domElement.addEventListener('wheel', (e) => { if (this.current?.onWheel) { e.preventDefault(); this.current.onWheel(Math.sign(e.deltaY)); } }, { passive: false });
     this.renderer.domElement.addEventListener('pointerdown', (e) => {
       const [x, y] = norm(e); this.current?.onPointerDown?.(x, y);
       const obj = this.pick(x, y);
@@ -113,6 +136,10 @@ export class App {
     this.midi.connect().catch(() => {});
     this.setScene(p.get('scene.current'));
     this.resize();
+    if (new URLSearchParams(location.search).get('salidas') === '1') this.dual.open();   // necesita ventanas emergentes permitidas
+    // ?musica=archivo.mp3 → public/musica/ (carpeta local, no se publica); si no, el último tema cargado
+    const mus = new URLSearchParams(location.search).get('musica');
+    if (mus) this.music.loadUrl(`${import.meta.env?.BASE_URL ?? '/'}musica/${mus}`, mus); else this.music.restoreLast();
     this.renderer.setAnimationLoop(() => this.frame());
   }
 
@@ -171,8 +198,11 @@ export class App {
 
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
+    // con salidas a proyectores, el buffer tiene que alcanzar su resolución (se copia de acá)
+    let pr = this.params.get('look.pixelRatio');
+    if (this.dual?.active) { const o = this.dual.size(); pr = Math.min(4, Math.max(pr, o.w / w, o.h / h)); }
+    if (this.renderer.getPixelRatio() !== pr) this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h);
-    const pr = this.renderer.getPixelRatio();
     this.cornerPin.ensureSize(Math.round(w * pr), Math.round(h * pr));
     this.cornerPin.positionHandles();
   }
@@ -182,8 +212,16 @@ export class App {
     const k = e.key.toLowerCase();
     this.emit('key', { key: e.key });
     if (k === 'e') { window.open('editor.html', '_blank'); return; }
+    if (k === 'a') { this.panel.toggle(); return; }
+    if (k === 'k' || (k === ' ' && this.music.track)) { this.music.toggle(); return; }
+    if (k === 'j' || k === 'l') { this.music.seek(this.music.time() + (k === 'l' ? 5 : -5)); return; }
+    if (k === 'v') { this.params.set('director.activo', !this.params.get('director.activo')); return; }
+    if (k === 'z') { this.kaoss.toggle(); return; }
+    if (k === '[' || k === ']') { const i = this.scenes.indexOf(this.current), n = this.scenes.length; this.setScene(this.scenes[(i + (k === ']' ? 1 : -1) + n) % n].key); return; }
+    if (k === 'x' && this.params.has('fx.estela')) { this.stereo.fx.randomize(this.music.cues.energy); return; }
     if (k >= '1' && k <= '9') { const s = this.scenes[Number(k) - 1]; if (s) this.setScene(s.key); }
     else if (k === 'm') this.stereo.nextMode();
+    else if (k === 'o') this.dual.toggle();
     else if (k === 's') this.params.set('stereo.swap', !this.params.get('stereo.swap'));
     else if (k === 'g') this.gui.toggle();
     else if (k === 'h') { this.help.classList.toggle('hidden'); this.hud.classList.toggle('hidden'); }
@@ -273,20 +311,35 @@ export class App {
     const dt = Math.min(this.clock.getDelta(), 0.1) * this.params.get('look.timeScale');
     this.time += dt;
     this.audio.update(dt);
+    this.camIn.update(dt);
+    this.music.update(dt);
+    this.kaoss.update(dt);
+    this.kaossLights.update(this.music.cues, dt, this.kaoss); this.kaossLights.setBands(this.music.cues.bands);
+    this.stereo.fx.tick(dt);
     if (this.audio.beat) this.emit('beat', {});
     const scene = this.current;
     scene.update(dt, this.time);
     this.timeline.update(dt);
     this.rules.update(dt);
     this.renderer.toneMappingExposure = this.params.get('look.exposure');
+    const tm = { aces: THREE.ACESFilmicToneMapping, neutral: THREE.NeutralToneMapping, filmic: THREE.AgXToneMapping, ninguno: THREE.NoToneMapping }[this.params.get('look.tonemapping')] ?? THREE.ACESFilmicToneMapping;
+    if (this.renderer.toneMapping !== tm) { this.renderer.toneMapping = tm; this.stereo.material.needsUpdate = true; }
 
     if (!scene.handlesDepthLook) this.depthLook.apply(scene.scene, scene.camera);
 
-    const target = this.cornerPin.active ? this.cornerPin.rt : null;
-    this.stereo.render(scene.scene, scene.camera, target);
-    if (target) this.cornerPin.render();
+    const dual = this.dual.active;
+    if (dual !== this.dualWas) { this.dualWas = dual; this.resize(); }
+    if (dual) {
+      // dos proyectores: un render, cada ojo a su ventana; acá queda la vista previa
+      this.stereo.renderDual(scene.scene, scene.camera, this.dual, this.params.get('salidas.vista'));
+    } else {
+      const target = this.cornerPin.active ? this.cornerPin.rt : null;
+      this.stereo.render(scene.scene, scene.camera, target);
+      if (target) this.cornerPin.render();
+    }
 
     this.updateHud(dt);
+    this.panel.draw();
   }
 
   updateHud(dt) {
@@ -296,10 +349,10 @@ export class App {
     const learn = p.learnTarget ? `\nLEARN → ${p.learnTarget}  (mové un control)` : '';
     const dist = this.distanceLine();
     this.hud.textContent =
-      `${this.current.title}   ${p.get('stereo.mode')}${p.get('stereo.swap') ? ' (swap)' : ''}   ` +
+      `${this.current.title} (${this.scenes.indexOf(this.current) + 1}/${this.scenes.length})   ${this.dualWas ? `dos proyectores L/R ${this.dual.size().w}×${this.dual.size().h}` : p.get('stereo.mode')}${p.get('stereo.swap') ? ' (swap)' : ''}   ` +
       `eyeSep ${p.get('stereo.eyeSep').toFixed(3)}  focus ${p.get('stereo.focus').toFixed(2)}   ${this.fps} fps` +
       (p.get('look.depth') ? '   [depth]' : '') + (this.cornerPin.edit ? '   [corner-pin]' : '') +
-      dist + learn + (this.logLines.length ? '\n' + this.logLines.join('\n') : '');
+      dist + learn + (this.current.credits ? `\n${this.current.credits}` : '') + (this.logLines.length ? '\n' + this.logLines.join('\n') : '');
   }
 
   /** Distancia recomendada del público según la calibración guardada (página /calibrate.html). */

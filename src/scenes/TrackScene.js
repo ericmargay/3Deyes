@@ -33,6 +33,8 @@ function mulberry(seed) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) |
 
 export class TrackScene extends BaseScene {
   static id = 'track';
+  static title = 'Track';
+  static category = 'Geometría y física';
   constructor(app) {
     super(app, 'track', 'Track');
     this.dist = 0;

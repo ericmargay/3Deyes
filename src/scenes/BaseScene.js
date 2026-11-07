@@ -35,9 +35,12 @@ export class BaseScene {
   update(_dt, _t) {}
   onParam(_name, _value) {}
 
-  enter() {
+  /** Construye la escena si hace falta (sin efectos de "entrar": la usa el Escenario para proyectar otra escena). */
+  ensureBuilt() {
     if (!this.built) { this.defineParams(); this.build(); this.built = true; }
   }
+
+  enter() { this.ensureBuilt(); }
   exit() {}
 
   dispose() {

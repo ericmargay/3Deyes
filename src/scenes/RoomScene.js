@@ -11,6 +11,8 @@ const PALETTE = [0xff4f8b, 0xffa14f, 0x4fd1c5, 0xb388ff, 0xffd166, 0xff7b5c, 0x8
 
 export class RoomScene extends BaseScene {
   static id = 'room';
+  static title = 'Habitación';
+  static category = 'Geometría y física';
   constructor(app) {
     super(app, 'room', 'Habitación');
     this.bodies = [];
